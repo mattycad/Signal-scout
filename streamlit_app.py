@@ -13,10 +13,10 @@ def generate_signals(df):
     data['MA50'] = data['Close'].rolling(window=50).mean()
     
     delta = data['Close'].diff()
-    gain = np.where(delta > 0, delta, 0)
-    loss = np.where(delta < 0, -delta, 0)
+    gain = np.where(delta > 0, delta, 0).flatten()
+    loss = np.where(delta < 0, -delta, 0).flatten()
 
-    # Ensure gain and loss are 1D Series with correct index
+    # Now these are 1D arrays
     gain = pd.Series(gain, index=data.index)
     loss = pd.Series(loss, index=data.index)
 

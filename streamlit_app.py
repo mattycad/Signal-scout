@@ -1,195 +1,164 @@
 import streamlit as st
 import yfinance as yf
-import ta
+import pandas as pd
+import numpy as np
+import requests
+from datetime import datetime, timedelta
 
-st.set_page_config(page_title="📈 Signal Scout Global", layout="centered")
+st.set_page_config(page_title="Multi-Market Signal Scout", layout="wide")
 
-assets = {
-    # UK Stocks
-    "AstraZeneca (AZN)": "AZN.L",
-    "HSBC Holdings (HSBA)": "HSBA.L",
-    "Shell (SHEL)": "SHEL.L",
-    "BP (BP)": "BP.L",
-    "Unilever (ULVR)": "ULVR.L",
-    "Diageo (DGE)": "DGE.L",
-    "Tesco (TSCO)": "TSCO.L",
-    "GlaxoSmithKline (GSK)": "GSK.L",
-    "Barclays (BARC)": "BARC.L",
-    "Rolls-Royce (RR)": "RR.L",
-    # US Stocks
-    "Apple (AAPL)": "AAPL",
-    "Microsoft (MSFT)": "MSFT",
-    "Amazon (AMZN)": "AMZN",
-    "Alphabet (GOOGL)": "GOOGL",
-    "Tesla (TSLA)": "TSLA",
-    "NVIDIA (NVDA)": "NVDA",
-    "JPMorgan Chase (JPM)": "JPM",
-    "Johnson & Johnson (JNJ)": "JNJ",
-    "Visa (V)": "V",
-    "Walmart (WMT)": "WMT",
-    # European Stocks
-    "SAP (SAP)": "SAP.DE",
-    "Siemens (SIE)": "SIE.DE",
-    "LVMH (MC)": "MC.PA",
-    "TotalEnergies (TTE)": "TTE.PA",
-    "Nestlé (NESN)": "NESN.SW",
-    "Roche (ROG)": "ROG.SW",
-    "ASML (ASML)": "ASML",
-    # Cryptocurrencies
-    "Bitcoin (BTC)": "BTC-USD",
-    "Ethereum (ETH)": "ETH-USD",
-    "Cardano (ADA)": "ADA-USD",
-    "Solana (SOL)": "SOL-USD",
-    "Polygon (MATIC)": "MATIC-USD",
-    "Polkadot (DOT)": "DOT-USD",
-    "Ripple (XRP)": "XRP-USD",
-    "Dogecoin (DOGE)": "DOGE-USD",
-    "Litecoin (LTC)": "LTC-USD",
-    "Chainlink (LINK)": "LINK-USD",
-    "Stellar (XLM)": "XLM-USD",
-    "VeChain (VET)": "VET-USD",
-    "Tron (TRX)": "TRX-USD",
-    "EOS (EOS)": "EOS-USD",
-    "Monero (XMR)": "XMR-USD",
-    "Bitcoin Cash (BCH)": "BCH-USD",
-    # Commodities
-    "Gold (GC=F)": "GC=F",
-    "Silver (SI=F)": "SI=F",
-    "Platinum (PL=F)": "PL=F",
-    "Palladium (PA=F)": "PA=F",
-    "Crude Oil WTI (CL=F)": "CL=F",
-    "Brent Crude (BZ=F)": "BZ=F",
-    "Natural Gas (NG=F)": "NG=F",
-    "Copper (HG=F)": "HG=F",
-    "Corn (ZC=F)": "ZC=F",
-    "Soybeans (ZS=F)": "ZS=F",
-    "Wheat (ZW=F)": "ZW=F",
-    "Sugar (SB=F)": "SB=F",
-    "Coffee (KC=F)": "KC=F",
-    # Forex
-    "EUR/USD": "EURUSD=X",
-    "GBP/USD": "GBPUSD=X",
-    "USD/JPY": "JPY=X",
-    "USD/CHF": "CHF=X",
-    "AUD/USD": "AUDUSD=X",
-    "USD/CAD": "CAD=X",
-    "NZD/USD": "NZDUSD=X",
-    "EUR/GBP": "EURGBP=X",
-    "EUR/JPY": "EURJPY=X",
-    "GBP/JPY": "GBPJPY=X"
+# --- Utility Functions ---
+
+def fetch_yahoo_data(ticker, period='1mo', interval='5m'):
+    """Fetch historical data from Yahoo Finance."""
+    try:
+        data = yf.download(ticker, period=period, interval=interval, progress=False)
+        if data.empty:
+            st.error(f"No data for ticker {ticker}")
+        return data
+    except Exception as e:
+        st.error(f"Error fetching data for {ticker}: {e}")
+        return None
+
+def fetch_crypto_price(symbol):
+    """Fetch current price for a crypto from CoinGecko API."""
+    # CoinGecko simple price API endpoint
+    url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=usd"
+    try:
+        r = requests.get(url)
+        r.raise_for_status()
+        price = r.json()[symbol]['usd']
+        return price
+    except Exception as e:
+        st.error(f"Error fetching crypto price for {symbol}: {e}")
+        return None
+
+# --- Technical Indicators ---
+
+def moving_average(data, window):
+    return data['Close'].rolling(window=window).mean()
+
+def RSI(series, period=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    RS = gain / loss
+    return 100 - (100 / (1 + RS))
+
+# --- Signal Generation ---
+
+def generate_signals(data):
+    """
+    Simple signal logic based on:
+    - 20 MA and 50 MA crossover
+    - RSI oversold (<30) and overbought (>70)
+    """
+    data = data.copy()
+    data['MA20'] = moving_average(data, 20)
+    data['MA50'] = moving_average(data, 50)
+    data['RSI'] = RSI(data['Close'], 14)
+
+    # Latest row for signal
+    last = data.iloc[-1]
+    prev = data.iloc[-2]
+
+    signal = "Hold"
+
+    # MA Crossover
+    if prev['MA20'] < prev['MA50'] and last['MA20'] > last['MA50']:
+        signal = "Buy"
+    elif prev['MA20'] > prev['MA50'] and last['MA20'] < last['MA50']:
+        signal = "Sell"
+
+    # RSI override
+    if last['RSI'] < 30:
+        signal = "Buy"
+    elif last['RSI'] > 70:
+        signal = "Sell"
+
+    return signal, last['Close'], last['MA20'], last['MA50'], last['RSI']
+
+# --- Asset Lists ---
+
+stock_symbols = ['AAPL', 'MSFT', 'TSLA', 'GOOGL', 'AMZN']
+commodity_symbols = ['GC=F', 'CL=F', 'SI=F']  # Gold, Crude Oil, Silver futures Yahoo tickers
+currency_pairs = ['EURUSD=X', 'JPY=X', 'GBPUSD=X']  # Yahoo FX pairs
+crypto_map = {  # CoinGecko IDs to symbols
+    'bitcoin': 'BTC',
+    'ethereum': 'ETH',
+    'ripple': 'XRP',
+    'cardano': 'ADA'
 }
 
-# Session state for signals
-if "signals" not in st.session_state:
-    st.session_state.signals = {}
+# --- Streamlit UI ---
 
-st.title("📈 Signal Scout Global")
-st.write("Analyze global stocks, crypto, commodities, and currencies with Buy/Sell signals and close alerts.")
+st.title("Multi-Market Real-Time Signal Scout")
 
-selected_asset = st.selectbox("Choose a stock, crypto, commodity, or currency:", list(assets.keys()))
-ticker = assets[selected_asset]
-logic_mode = st.selectbox("Select Logic Mode", ["Simple", "Combined"])
+market = st.selectbox("Select Market Type", ['Stocks', 'Commodities', 'Currencies', 'Cryptocurrency'])
 
-@st.cache_data(ttl=60)
-def get_data(ticker):
-    df = yf.download(ticker, period="3mo", interval="1d", progress=False)
-    df.dropna(inplace=True)
-    return df
-
-def calculate_signal(df, logic_mode):
-    close = df["Close"].squeeze()
-    rsi = ta.momentum.RSIIndicator(close).rsi()
-    sma20 = ta.trend.SMAIndicator(close, window=20).sma_indicator()
-    macd_obj = ta.trend.MACD(close)
-    macd = macd_obj.macd()
-    macd_signal = macd_obj.macd_signal()
-
-    latest = df.iloc[-1]
-    rsi_val = float(rsi.iloc[-1])
-    sma_val = float(sma20.iloc[-1])
-    macd_val = float(macd.iloc[-1])
-    macd_signal_val = float(macd_signal.iloc[-1])
-    close_val = float(latest["Close"])
-
-    signal = "HOLD"
-    reason = ""
-
-    if logic_mode == "Simple":
-        if rsi_val < 30:
-            signal = "BUY"
-            reason = "RSI < 30 (Oversold)"
-        elif rsi_val > 70:
-            signal = "SELL"
-            reason = "RSI > 70 (Overbought)"
+if market != 'Cryptocurrency':
+    if market == 'Stocks':
+        symbol = st.selectbox("Select Stock", stock_symbols)
+    elif market == 'Commodities':
+        symbol = st.selectbox("Select Commodity", commodity_symbols)
     else:
-        if (rsi_val < 30) and (close_val > sma_val) and (macd_val > macd_signal_val):
-            signal = "BUY"
-            reason = "RSI < 30 + Price > SMA + MACD crossover"
-        elif (rsi_val > 70) and (close_val < sma_val) and (macd_val < macd_signal_val):
-            signal = "SELL"
-            reason = "RSI > 70 + Price < SMA + MACD cross down"
+        symbol = st.selectbox("Select Currency Pair", currency_pairs)
 
-    return signal, reason, rsi_val, sma_val, macd_val, macd_signal_val, close_val
+    data_load_state = st.text("Loading data...")
+    data = fetch_yahoo_data(symbol)
+    if data is not None and not data.empty:
+        signal, price, ma20, ma50, rsi = generate_signals(data)
+        data_load_state.text("Data loaded.")
 
-try:
-    df = get_data(ticker)
-    signal, reason, rsi_val, sma_val, macd_val, macd_signal_val, close_val = calculate_signal(df, logic_mode)
+        st.subheader(f"Latest price for {symbol}: ${price:.2f}")
+        st.write(f"Signal: **{signal}**")
+        st.write(f"MA20: {ma20:.2f} | MA50: {ma50:.2f} | RSI: {rsi:.2f}")
 
-    st.markdown("---")
-    st.subheader(f"📊 {selected_asset} Technical Summary")
-    st.metric("Latest Price", f"${close_val:.4f}" if "/" in selected_asset else f"${close_val:.2f}")
-    st.write(f"📉 RSI: **{rsi_val:.2f}**")
-    st.write(f"📈 SMA (20): **{sma_val:.2f}**")
-    st.write(f"📊 MACD: **{macd_val:.2f}** | Signal: **{macd_signal_val:.2f}**")
+        st.line_chart(data[['Close', 'MA20', 'MA50']].dropna())
 
-    color = {"BUY": "🟢", "SELL": "🔴", "HOLD": "🟡"}
+else:
+    # Crypto
+    crypto = st.selectbox("Select Cryptocurrency", list(crypto_map.values()))
+    # Map symbol to coingecko ID
+    coingecko_id = None
+    for k, v in crypto_map.items():
+        if v == crypto:
+            coingecko_id = k
+            break
 
-    if signal == "BUY" or signal == "SELL":
-        st.markdown(f"### Signal: {color[signal]} **{signal}**")
-        if reason:
-            st.caption(f"📌 Reason: {reason}")
-    else:
-        st.markdown("### Signal: 🟡 **No actionable BUY/SELL signal**")
+    price = fetch_crypto_price(coingecko_id)
+    if price is not None:
+        st.subheader(f"Latest price for {crypto}: ${price:.4f}")
+        st.write("Signals for crypto are based on price momentum (demo).")
 
-    st.markdown("---")
+        # For simplicity, demo a moving average on last 30 days close from CoinGecko market chart API
+        # We'll fetch historical price data for crypto here:
 
-    prev_signal = st.session_state.signals.get(selected_asset, None)
-    st.session_state.signals[selected_asset] = signal
+        @st.cache_data(ttl=600)
+        def fetch_crypto_historical(coin_id, days=30):
+            url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart?vs_currency=usd&days={days}&interval=daily"
+            r = requests.get(url)
+            r.raise_for_status()
+            prices = r.json()['prices']  # List of [timestamp, price]
+            df = pd.DataFrame(prices, columns=['timestamp', 'price'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df.set_index('timestamp', inplace=True)
+            return df
 
-    if prev_signal:
-        if prev_signal == "BUY" and signal == "SELL":
-            st.warning(f"⚠️ Close your BUY position in **{selected_asset}** — signal changed to SELL.")
-        elif prev_signal == "SELL" and signal == "BUY":
-            st.warning(f"⚠️ Close your SELL position in **{selected_asset}** — signal changed to BUY.")
+        hist = fetch_crypto_historical(coingecko_id)
+        hist['MA10'] = hist['price'].rolling(window=10).mean()
+        hist['MA20'] = hist['price'].rolling(window=20).mean()
 
-    st.subheader("🚀 Best Assets to Buy Now")
-    best_buys = []
-    best_sells = []
+        last = hist.iloc[-1]
+        prev = hist.iloc[-2]
+        signal = "Hold"
+        if prev['MA10'] < prev['MA20'] and last['MA10'] > last['MA20']:
+            signal = "Buy"
+        elif prev['MA10'] > prev['MA20'] and last['MA10'] < last['MA20']:
+            signal = "Sell"
 
-    for name, sym in assets.items():
-        try:
-            data = get_data(sym)
-            sig, _, _, _, _, _, price = calculate_signal(data, logic_mode)
-            if sig == "BUY":
-                best_buys.append((name, price))
-            elif sig == "SELL":
-                best_sells.append((name, price))
-        except Exception:
-            continue
+        st.write(f"Signal based on MA crossover: **{signal}**")
+        st.line_chart(hist[['price', 'MA10', 'MA20']])
 
-    if best_buys:
-        for asset_name, price in best_buys:
-            st.write(f"🟢 **{asset_name}** at ${price:.2f}")
-    else:
-        st.write("No BUY signals found right now.")
-
-    st.markdown("---")
-    st.subheader("⚠️ Best Assets to Sell Now")
-    if best_sells:
-        for asset_name, price in best_sells:
-            st.write(f"🔴 **{asset_name}** at ${price:.2f}")
-    else:
-        st.write("No SELL signals found right now.")
-
-except Exception as e:
-    st.error(f"❌ Something went wrong while analyzing data: {e}")
+st.markdown("---")
+st.write("Data sources: Yahoo Finance (stocks, commodities, FX), CoinGecko (crypto).")

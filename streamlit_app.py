@@ -53,7 +53,7 @@ def generate_signals(data):
 
     signal = "Hold"
 
-    # Need at least 2 rows to compare
+    # Need at least 2 rows to compare previous and last values
     if len(data) < 2:
         return signal, np.nan, np.nan, np.nan, np.nan
 
@@ -64,7 +64,7 @@ def generate_signals(data):
     last_rsi = data['RSI'].iloc[-1]
     last_close = data['Close'].iloc[-1]
 
-    # Check for NaNs before decision logic
+    # Skip signal logic if any relevant value is NaN
     if not any(pd.isna([prev_ma20, prev_ma50, last_ma20, last_ma50])):
         if prev_ma20 < prev_ma50 and last_ma20 > last_ma50:
             signal = "Buy"
@@ -111,6 +111,12 @@ if market != 'Cryptocurrency':
         signal, price, ma20, ma50, rsi = generate_signals(data)
         data_load_state.text("Data loaded.")
 
+        # Defensive conversion to scalar float for price
+        try:
+            price = float(price)
+        except Exception:
+            price = np.nan
+
         if pd.isna(price):
             st.subheader(f"Latest price for {symbol}: Data unavailable")
         else:
@@ -121,6 +127,8 @@ if market != 'Cryptocurrency':
             st.write(f"MA20: {ma20:.2f} | MA50: {ma50:.2f} | RSI: {rsi:.2f}")
 
         st.line_chart(data[['Close', 'MA20', 'MA50']].dropna())
+    else:
+        data_load_state.text("Failed to load data.")
 
 else:
     # Crypto
@@ -151,7 +159,7 @@ else:
         hist['MA10'] = hist['price'].rolling(window=10).mean()
         hist['MA20'] = hist['price'].rolling(window=20).mean()
 
-        if len(hist) >= 2:
+        if len(hist) >= 2 and not hist[['MA10', 'MA20']].isna().any().any():
             last = hist.iloc[-1]
             prev = hist.iloc[-2]
             signal = "Hold"
@@ -160,6 +168,8 @@ else:
             elif prev['MA10'] > prev['MA20'] and last['MA10'] < last['MA20']:
                 signal = "Sell"
             st.write(f"Signal based on MA crossover: **{signal}**")
+        else:
+            st.write("Insufficient data to generate signal.")
 
         st.line_chart(hist[['price', 'MA10', 'MA20']])
 

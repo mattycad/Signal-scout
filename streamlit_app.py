@@ -35,35 +35,24 @@ def get_data(ticker):
     df.dropna(inplace=True)
     return df
 
-try:
-    df = get_data(ticker)
-
-    # Make sure Close is a Series, not DataFrame slice
+def calculate_signal(df, logic_mode):
     close = df["Close"].squeeze()
     if close.ndim != 1:
         close = close.iloc[:,0]
 
-    # Calculate indicators with 1D series input, outputs are also 1D
     rsi = ta.momentum.RSIIndicator(close).rsi()
     sma20 = ta.trend.SMAIndicator(close, window=20).sma_indicator()
     macd_obj = ta.trend.MACD(close)
     macd = macd_obj.macd()
     macd_signal = macd_obj.macd_signal()
 
-    # Assign back to df for plotting or further usage if needed
-    df["RSI"] = rsi
-    df["SMA_20"] = sma20
-    df["MACD"] = macd
-    df["MACD_Signal"] = macd_signal
-
     latest = df.iloc[-1]
 
-    # Extract scalar float values explicitly to avoid ambiguous truth errors
-    rsi_val = float(latest["RSI"])
+    rsi_val = float(latest["RSI"]) if "RSI" in df.columns else float(rsi.iloc[-1])
+    sma_val = float(latest["SMA_20"]) if "SMA_20" in df.columns else float(sma20.iloc[-1])
+    macd_val = float(latest["MACD"]) if "MACD" in df.columns else float(macd.iloc[-1])
+    macd_signal_val = float(latest["MACD_Signal"]) if "MACD_Signal" in df.columns else float(macd_signal.iloc[-1])
     close_val = float(latest["Close"])
-    sma_val = float(latest["SMA_20"])
-    macd_val = float(latest["MACD"])
-    macd_signal_val = float(latest["MACD_Signal"])
 
     signal = "HOLD"
     reason = ""
@@ -83,6 +72,13 @@ try:
             signal = "SELL"
             reason = "RSI > 70 + Price < SMA + MACD cross down"
 
+    return signal, reason, rsi_val, sma_val, macd_val, macd_signal_val, close_val
+
+try:
+    # Analyze selected asset
+    df = get_data(ticker)
+    signal, reason, rsi_val, sma_val, macd_val, macd_signal_val, close_val = calculate_signal(df, logic_mode)
+
     st.markdown("---")
     st.subheader(f"📊 {selected_asset} Technical Summary")
     st.metric("Latest Price", f"${close_val:.2f}")
@@ -90,11 +86,42 @@ try:
     st.write(f"📈 SMA (20): **{sma_val:.2f}**")
     st.write(f"📊 MACD: **{macd_val:.2f}** | Signal: **{macd_signal_val:.2f}**")
 
-    st.markdown("---")
     color = {"BUY": "🟢", "SELL": "🔴", "HOLD": "🟡"}
     st.markdown(f"### Signal: {color[signal]} **{signal}**")
     if reason:
         st.caption(f"📌 Reason: {reason}")
+
+    # Scan all assets for BUY and SELL signals
+    st.markdown("---")
+    st.subheader("🚀 Best Assets to Buy Now")
+
+    best_buys = []
+    best_sells = []
+    for name, sym in assets.items():
+        try:
+            data = get_data(sym)
+            sig, _, _, _, _, _, price = calculate_signal(data, logic_mode)
+            if sig == "BUY":
+                best_buys.append((name, price))
+            elif sig == "SELL":
+                best_sells.append((name, price))
+        except Exception:
+            continue  # skip if data fails
+
+    if best_buys:
+        for asset_name, price in best_buys:
+            st.write(f"🟢 **{asset_name}** at ${price:.2f}")
+    else:
+        st.write("No BUY signals found right now.")
+
+    st.markdown("---")
+    st.subheader("⚠️ Best Assets to Sell Now")
+
+    if best_sells:
+        for asset_name, price in best_sells:
+            st.write(f"🔴 **{asset_name}** at ${price:.2f}")
+    else:
+        st.write("No SELL signals found right now.")
 
 except Exception as e:
     st.error(f"❌ Something went wrong while analyzing data: {e}")

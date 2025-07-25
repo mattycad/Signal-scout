@@ -15,17 +15,15 @@ logic_mode = st.selectbox("Select Logic Mode", ["Simple", "Combined"])
 st.markdown("---")
 
 @st.cache_data
-def get_data(ticker):
-    df = yf.download(ticker, period="30d", interval="1h")
-    df.dropna(inplace=True)
-    return df
-
 try:
     df = get_data(ticker)
-    
+
     # === INDICATORS ===
     df["RSI"] = ta.momentum.RSIIndicator(df["Close"]).rsi().squeeze()
-df["SMA_20"] = ta.trend.SMAIndicator(df["Close"], window=20).sma_indicator().squeeze()
+    df["SMA_20"] = ta.trend.SMAIndicator(df["Close"], window=20).sma_indicator().squeeze()
+    macd = ta.trend.MACD(df["Close"])
+    df["MACD"] = macd.macd().squeeze()
+    df["MACD_Signal"] = macd.macd_signal().squeeze()
 
     latest = df.iloc[-1]
 
@@ -49,17 +47,17 @@ df["SMA_20"] = ta.trend.SMAIndicator(df["Close"], window=20).sma_indicator().squ
             reason = "RSI > 70 AND Price < SMA AND MACD cross down"
 
     # === DISPLAY ===
-    st.subheader(f"📊 {ticker.upper()} Analysis")
-    st.write(f"**Latest Price:** ${latest['Close']:.2f}")
-    st.write(f"**RSI:** {latest['RSI']:.2f}")
-    st.write(f"**SMA (20):** ${latest['SMA_20']:.2f}")
-    st.write(f"**MACD:** {latest['MACD']:.2f} | Signal: {latest['MACD_Signal']:.2f}")
+    st.subheader(f"{ticker.upper()} Analysis")
+    st.write(f"📈 Latest Price: **${latest['Close']:.2f}**")
+    st.write(f"📊 RSI: **{latest['RSI']:.2f}**")
+    st.write(f"🟡 SMA (20): **{latest['SMA_20']:.2f}**")
+    st.write(f"📉 MACD: **{latest['MACD']:.2f} | Signal: {latest['MACD_Signal']:.2f}**")
 
     st.markdown("---")
     color = {"BUY": "🟢", "SELL": "🔴", "HOLD": "🟡"}
     st.markdown(f"### Signal: {color[signal]} **{signal}**")
     if reason:
-        st.caption(f"📌 Reason: {reason}")
+        st.caption(f"🚀 Reason: {reason}")
 
 except Exception as e:
     st.error(f"Something went wrong: {e}")

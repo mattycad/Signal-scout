@@ -3,17 +3,68 @@ import yfinance as yf
 import pandas as pd
 import ta
 
-# === SETUP ===
-st.set_page_config(page_title="📈 Real-Time Signal Scout", layout="centered")
-st.title("📈 Real-Time Signal Scout")
-st.write("Analyze real-time stock & crypto prices and get instant Buy/Sell/Hold signals.")
+# === PAGE SETUP ===
+st.set_page_config(page_title="📈 Signal Scout UK", layout="centered")
+st.title("📈 Signal Scout UK")
+st.write("Get real-time **Buy/Sell/Hold** signals for UK stocks and cryptocurrencies.")
 
-# === USER INPUT ===
-ticker = st.text_input("Enter Ticker Symbol (e.g., AAPL or BTC-USD)", "AAPL")
-logic_mode = st.selectbox("Select Logic Mode", ["Simple", "Combined"])
+# === BEGINNER-FRIENDLY ASSET LIST ===
+st.subheader("🔍 Select a Stock or Crypto")
 
-# === DATA FETCH ===
-@st.cache_data(ttl=60)
+assets = {
+    "📈 FTSE 100 Stocks": {
+        "AstraZeneca (AZN)": "AZN.L",
+        "HSBC Holdings (HSBA)": "HSBA.L",
+        "Shell (SHEL)": "SHEL.L",
+        "Unilever (ULVR)": "ULVR.L",
+        "BP (BP)": "BP.L",
+        "Diageo (DGE)": "DGE.L",
+        "Barclays (BARC)": "BARC.L",
+        "Rolls-Royce (RR)": "RR.L",
+        "Tesco (TSCO)": "TSCO.L",
+        "GlaxoSmithKline (GSK)": "GSK.L"
+    },
+    "📊 FTSE 250 / AIM Stocks": {
+        "Marks & Spencer (MKS)": "MKS.L",
+        "easyJet (EZJ)": "EZJ.L",
+        "Wizz Air (WIZZ)": "WIZZ.L",
+        "AO World (AO)": "AO.L",
+        "Fevertree Drinks (FEVR)": "FEVR.L"
+    },
+    "💱 Cryptocurrencies": {
+        "Bitcoin (BTC)": "BTC-USD",
+        "Ethereum (ETH)": "ETH-USD",
+        "Cardano (ADA)": "ADA-USD",
+        "Solana (SOL)": "SOL-USD",
+        "Polygon (MATIC)": "MATIC-USD",
+        "Polkadot (DOT)": "DOT-USD",
+        "Ripple (XRP)": "XRP-USD",
+        "Dogecoin (DOGE)": "DOGE-USD",
+        "Litecoin (LTC)": "LTC-USD"
+    }
+}
+
+# Flatten the grouped options for Streamlit selectbox
+grouped_options = []
+ticker_map = {}
+for group, items in assets.items():
+    grouped_options.append(f"--- {group} ---")
+    for name, ticker_code in items.items():
+        grouped_options.append(name)
+        ticker_map[name] = ticker_code
+
+selected_asset = st.selectbox("Choose from the list below:", grouped_options)
+if selected_asset.startswith("---"):
+    st.info("Please select an actual stock or crypto.")
+    st.stop()
+
+ticker = ticker_map[selected_asset]
+
+# === LOGIC SELECTION ===
+logic_mode = st.radio("Signal Logic Mode", ["Simple", "Combined"], horizontal=True)
+
+# === FETCH PRICE DATA ===
+@st.cache_data(ttl=300)
 def get_data(ticker):
     df = yf.download(ticker, period="3mo", interval="1d", progress=False)
     df.dropna(inplace=True)
@@ -22,56 +73,47 @@ def get_data(ticker):
 try:
     df = get_data(ticker)
 
-    # Ensure Close column is 1D Series for ta
-    close_series = df["Close"].squeeze()
-
     # === TECHNICAL INDICATORS ===
-    df["RSI"] = ta.momentum.RSIIndicator(close_series).rsi()
-    df["SMA_20"] = ta.trend.SMAIndicator(close_series, window=20).sma_indicator()
-    macd = ta.trend.MACD(close_series)
+    df["RSI"] = ta.momentum.RSIIndicator(df["Close"]).rsi()
+    df["SMA_20"] = ta.trend.SMAIndicator(df["Close"], window=20).sma_indicator()
+    macd = ta.trend.MACD(df["Close"])
     df["MACD"] = macd.macd()
     df["MACD_Signal"] = macd.macd_signal()
 
     latest = df.iloc[-1]
-
-    # Cast values to float scalars to avoid ambiguous truth value errors
-    rsi = float(latest["RSI"])
-    close = float(latest["Close"])
-    sma_20 = float(latest["SMA_20"])
-    macd_val = float(latest["MACD"])
-    macd_signal = float(latest["MACD_Signal"])
 
     # === SIGNAL LOGIC ===
     signal = "HOLD"
     reason = ""
 
     if logic_mode == "Simple":
-        if rsi < 30:
+        if latest["RSI"] < 30:
             signal = "BUY"
             reason = "RSI < 30 (Oversold)"
-        elif rsi > 70:
+        elif latest["RSI"] > 70:
             signal = "SELL"
             reason = "RSI > 70 (Overbought)"
-    else:  # Combined logic
-        if rsi < 30 and close > sma_20 and macd_val > macd_signal:
+    else:  # Combined
+        if latest["RSI"] < 30 and latest["Close"] > latest["SMA_20"] and latest["MACD"] > latest["MACD_Signal"]:
             signal = "BUY"
             reason = "RSI < 30 + Price > SMA + MACD crossover"
-        elif rsi > 70 and close < sma_20 and macd_val < macd_signal:
+        elif latest["RSI"] > 70 and latest["Close"] < latest["SMA_20"] and latest["MACD"] < latest["MACD_Signal"]:
             signal = "SELL"
             reason = "RSI > 70 + Price < SMA + MACD cross down"
 
     # === DISPLAY ===
-    st.subheader(f"{ticker.upper()} Analysis")
-    st.metric("Latest Price", f"${close:.2f}")
-    st.write(f"📊 RSI: **{rsi:.2f}**")
-    st.write(f"📈 SMA (20): **{sma_20:.2f}**")
-    st.write(f"📉 MACD: **{macd_val:.2f}** | Signal: **{macd_signal:.2f}**")
+    st.markdown("---")
+    st.subheader(f"📊 {selected_asset} Technical Summary")
+    st.metric("💵 Latest Price", f"${latest['Close']:.2f}")
+    st.write(f"📉 RSI: **{latest['RSI']:.2f}**")
+    st.write(f"📈 SMA (20): **{latest['SMA_20']:.2f}**")
+    st.write(f"📊 MACD: **{latest['MACD']:.2f}** vs Signal: **{latest['MACD_Signal']:.2f}**")
 
     st.markdown("---")
-    color = {"BUY": "🟢", "SELL": "🔴", "HOLD": "🟡"}
-    st.markdown(f"### Signal: {color[signal]} **{signal}**")
+    colors = {"BUY": "🟢", "SELL": "🔴", "HOLD": "🟡"}
+    st.markdown(f"### 📌 Final Signal: {colors[signal]} **{signal}**")
     if reason:
-        st.caption(f"📌 Reason: {reason}")
+        st.caption(f"🧠 Logic Reason: {reason}")
 
 except Exception as e:
-    st.error(f"Something went wrong: {e}")
+    st.error(f"Something went wrong while analyzing data: {e}")

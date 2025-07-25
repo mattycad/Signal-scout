@@ -5,165 +5,141 @@ import ta
 import concurrent.futures
 import datetime
 
-st.set_page_config(page_title="📈 Signal Scout Global", layout="centered")
-st.title("📈 Signal Scout Global")
-st.write("Analyze global S&P 500 stocks (500+), crypto, commodities, forex with Buy/Sell/Hold signals.")
+st.set_page_config(page_title="📈 Signal Scout: Multi-Asset Alerts", layout="wide")
+st.title("📈 Signal Scout: Stocks, Crypto, Commodities & Forex")
 
-@st.cache_data(ttl=86400)
-def load_sp500_symbols():
-    try:
-        url = "https://raw.githubusercontent.com/rahulbordoloi/snp500/main/snp500.csv"
-        df = pd.read_csv(url)
-        if not {"Symbol", "Security"}.issubset(df.columns):
-            raise ValueError("CSV missing expected columns.")
-        return dict(zip(df['Symbol'] + " (" + df['Security'] + ")", df['Symbol'] + ".US"))
-    except Exception as e:
-        st.warning("⚠️ Could not load S&P 500 symbols. Falling back to default.")
-        return {
-            "Apple (AAPL)": "AAPL.US",
-            "Microsoft (MSFT)": "MSFT.US",
-            "Amazon (AMZN)": "AMZN.US"
-        }
+st.write("Analyze multiple asset classes with Buy/Sell/Hold signals and alerts on changes.")
 
-sp500_assets = load_sp500_symbols()
-
-other_assets = {
-    "Bitcoin (BTC)": "BTC-USD",
-    "Ethereum (ETH)": "ETH-USD",
+# Expanded Assets list (Stocks, Crypto, Commodities, Forex)
+ASSETS = {
+    # Stocks (popular & diverse sectors)
+    "Apple (AAPL)": "AAPL",
+    "Microsoft (MSFT)": "MSFT",
+    "Tesla (TSLA)": "TSLA",
+    "Amazon (AMZN)": "AMZN",
+    "Alphabet (GOOGL)": "GOOGL",
+    "Meta (META)": "META",
+    "NVIDIA (NVDA)": "NVDA",
+    "JPMorgan Chase (JPM)": "JPM",
+    "Johnson & Johnson (JNJ)": "JNJ",
+    "Visa (V)": "V",
+    "Walmart (WMT)": "WMT",
+    "Coca-Cola (KO)": "KO",
+    
+    # Crypto
+    "Bitcoin (BTC-USD)": "BTC-USD",
+    "Ethereum (ETH-USD)": "ETH-USD",
+    "Binance Coin (BNB-USD)": "BNB-USD",
+    "Cardano (ADA-USD)": "ADA-USD",
+    "Solana (SOL-USD)": "SOL-USD",
+    
+    # Commodities
     "Gold (GC=F)": "GC=F",
     "Silver (SI=F)": "SI=F",
     "Crude Oil WTI (CL=F)": "CL=F",
     "Brent Oil (BZ=F)": "BZ=F",
+    "Natural Gas (NG=F)": "NG=F",
+    "Copper (HG=F)": "HG=F",
+    
+    # Forex major pairs
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
     "USD/JPY": "JPY=X",
+    "USD/CHF": "CHF=X",
+    "AUD/USD": "AUDUSD=X",
+    "USD/CAD": "USDCAD=X",
+    "NZD/USD": "NZDUSD=X",
 }
 
-assets = {**sp500_assets, **other_assets}
-
-selected_asset = st.selectbox("Choose an asset:", list(assets.keys()))
-ticker = assets[selected_asset]
-logic_mode = st.selectbox("Logic Mode:", ["Simple", "Combined"])
-
 @st.cache_data(ttl=300)
-def get_data(ticker):
+def fetch_data(ticker):
     df = yf.download(ticker, period="3mo", interval="1d", progress=False)
-    if df.empty or "Close" not in df.columns:
-        raise ValueError(f"No valid price data for {ticker}")
+    if df.empty or 'Close' not in df.columns:
+        raise ValueError(f"No data for {ticker}")
     df.dropna(inplace=True)
     return df
 
-def calculate_signal(df, logic_mode):
-    close = df['Close'].dropna()
+def compute_signal(df):
+    close = df['Close']
     if len(close) < 21:
-        raise ValueError("Not enough data to calculate indicators.")
+        return "HOLD", "Insufficient data", None
 
+    # Indicators
     rsi = ta.momentum.RSIIndicator(close).rsi()
-    sma = ta.trend.SMAIndicator(close, 20).sma_indicator()
+    sma20 = ta.trend.SMAIndicator(close, 20).sma_indicator()
     macd = ta.trend.MACD(close)
     macd_line = macd.macd()
     macd_signal = macd.macd_signal()
 
-    if any(len(s.dropna()) < 1 for s in [rsi, sma, macd_line, macd_signal]):
-        raise ValueError("Not enough indicator data.")
+    # Use last valid values
+    rsi_val = rsi.dropna().iloc[-1]
+    sma_val = sma20.dropna().iloc[-1]
+    macd_val = macd_line.dropna().iloc[-1]
+    macd_sig_val = macd_signal.dropna().iloc[-1]
+    price = close.iloc[-1]
 
-    vals = {k: float(v.dropna().iloc[-1]) for k, v in {
-        'rsi': rsi, 'sma': sma, 'macd': macd_line, 'macd_signal': macd_signal
-    }.items()}
-    close_val = float(close.iloc[-1])
-    signal = "HOLD"; reason = ""
-
-    if logic_mode == "Simple":
-        if vals['rsi'] < 30:
-            signal, reason = "BUY", "RSI < 30 (Oversold)"
-        elif vals['rsi'] > 70:
-            signal, reason = "SELL", "RSI > 70 (Overbought)"
+    # Simple logic:
+    if rsi_val < 30 and price > sma_val and macd_val > macd_sig_val:
+        return "BUY", "RSI < 30, Price > SMA20, MACD bullish crossover", price
+    elif rsi_val > 70 and price < sma_val and macd_val < macd_sig_val:
+        return "SELL", "RSI > 70, Price < SMA20, MACD bearish crossover", price
     else:
-        if vals['rsi'] < 30 and close_val > vals['sma'] and vals['macd'] > vals['macd_signal']:
-            signal, reason = "BUY", "RSI < 30 + Price > SMA + MACD crossover"
-        elif vals['rsi'] > 70 and close_val < vals['sma'] and vals['macd'] < vals['macd_signal']:
-            signal, reason = "SELL", "RSI > 70 + Price < SMA + MACD cross down"
+        return "HOLD", "No clear signal", price
 
-    return signal, reason, vals['rsi'], vals['sma'], vals['macd'], vals['macd_signal'], close_val
+if 'signals' not in st.session_state:
+    st.session_state.signals = {}
 
-if 'prev_buy' not in st.session_state:
-    st.session_state.prev_buy = []
-if 'prev_sell' not in st.session_state:
-    st.session_state.prev_sell = []
+def scan_assets():
+    results = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(fetch_data, ticker): name for name, ticker in ASSETS.items()}
+        for future in concurrent.futures.as_completed(futures):
+            name = futures[future]
+            try:
+                df = future.result()
+                signal, reason, price = compute_signal(df)
+                results[name] = {"signal": signal, "reason": reason, "price": price}
+            except Exception as e:
+                results[name] = {"signal": "HOLD", "reason": "Error loading data", "price": None}
+    return results
 
-try:
-    with st.spinner("📡 Downloading asset data..."):
-        df = get_data(ticker)
-        sig, reason, rsi_val, sma_val, macd_val, macd_sig_val, close_val = calculate_signal(df, logic_mode)
+st.header("🚀 Asset Signals")
 
-    st.markdown("---")
-    st.subheader(f"📊 {selected_asset}")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Price", f"${close_val:.2f}")
-    col2.metric("RSI", f"{rsi_val:.2f}")
-    col3.metric("SMA(20)", f"{sma_val:.2f}")
-    st.write(f"MACD: {macd_val:.2f} | Signal: {macd_sig_val:.2f}")
-    color = {"BUY": "🟢", "SELL": "🔴", "HOLD": "🟡"}[sig]
-    st.markdown(f"### Signal: {color} {sig}")
-    if reason: st.caption(reason)
+with st.spinner("Fetching data and analyzing..."):
+    current_signals = scan_assets()
 
-    dfc = df[['Close']].copy()
-    dfc["SMA 20"] = ta.trend.SMAIndicator(df['Close'], 20).sma_indicator()
-    dfc.dropna(inplace=True)
+buy_list, sell_list, hold_list = [], [], []
 
-    with st.expander("📈 Show Price Chart"):
-        st.line_chart(dfc)
+for asset, info in current_signals.items():
+    sig = info['signal']
+    reason = info['reason']
+    price = info['price']
 
-except Exception as e:
-    st.error(f"Failed to analyze selected asset: {e}")
+    prev_sig = st.session_state.signals.get(asset)
+    if prev_sig != sig and prev_sig is not None:
+        st.info(f"🔔 Signal change for **{asset}**: {prev_sig} → {sig}")
 
-def scan(name, sym):
-    try:
-        d = get_data(sym)
-        s, _, _, _, _, _, p = calculate_signal(d, logic_mode)
-        return (name, s, p)
-    except:
-        return None
+    st.session_state.signals[asset] = sig
 
-st.markdown("---")
-st.subheader("📈 Scanning All Assets")
+    if sig == "BUY":
+        buy_list.append((asset, price, reason))
+    elif sig == "SELL":
+        sell_list.append((asset, price, reason))
+    else:
+        hold_list.append((asset, price, reason))
 
-with st.spinner("🔍 Scanning for Buy/Sell signals..."):
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
-        raw = list(ex.map(lambda item: scan(*item), assets.items()))
-    results = [r for r in raw if r]
+def show_assets(title, assets):
+    st.subheader(title)
+    if not assets:
+        st.write("None")
+    else:
+        for name, price, reason in sorted(assets, key=lambda x: x[1] or 0, reverse=True):
+            price_str = f"${price:.2f}" if price else "N/A"
+            st.write(f"- **{name}**: {price_str} — {reason}")
 
-    buys = [(n, p) for n, s, p in results if s == "BUY"]
-    sells = [(n, p) for n, s, p in results if s == "SELL"]
-
-def detect_changes(new, old, label):
-    new_names = set(n for n, _ in new)
-    old_names = set(old)
-    added = new_names - old_names
-    removed = old_names - new_names
-
-    for a in added:
-        st.success(f"🔔 New {label}: {a}")
-    for r in removed:
-        st.warning(f"💡 Consider Closing: {r} is no longer a {label}")
-
-    return list(new_names)
-
-st.write("🚀 Buys:")
-if buys:
-    st.session_state.prev_buy = detect_changes(buys, st.session_state.prev_buy, "BUY")
-    for n, p in buys:
-        st.write(f"🟢 {n} — ${p:.2f}")
-else:
-    st.write("No BUY signals.")
-
-st.write("⚠️ Sells:")
-if sells:
-    st.session_state.prev_sell = detect_changes(sells, st.session_state.prev_sell, "SELL")
-    for n, p in sells:
-        st.write(f"🔴 {n} — ${p:.2f}")
-else:
-    st.write("No SELL signals.")
+show_assets("🟢 Buy Signals", buy_list)
+show_assets("🔴 Sell Signals", sell_list)
+show_assets("🟡 Hold Signals", hold_list)
 
 st.markdown("---")
-st.caption(f"Last updated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.caption(f"Last update: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

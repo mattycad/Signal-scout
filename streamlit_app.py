@@ -49,12 +49,12 @@ def get_data(ticker):
 try:
     df = get_data(ticker)
 
-    # === TECHNICAL INDICATORS ===
-    df["RSI"] = ta.momentum.RSIIndicator(df["Close"]).rsi().squeeze()
-    df["SMA_20"] = ta.trend.SMAIndicator(df["Close"], window=20).sma_indicator().squeeze()
+    # === TECHNICAL INDICATORS - fixed for 1D data ===
+    df["RSI"] = pd.Series(ta.momentum.RSIIndicator(df["Close"]).rsi().values.flatten(), index=df.index)
+    df["SMA_20"] = pd.Series(ta.trend.SMAIndicator(df["Close"], window=20).sma_indicator().values.flatten(), index=df.index)
     macd = ta.trend.MACD(df["Close"])
-    df["MACD"] = macd.macd().squeeze()
-    df["MACD_Signal"] = macd.macd_signal().squeeze()
+    df["MACD"] = pd.Series(macd.macd().values.flatten(), index=df.index)
+    df["MACD_Signal"] = pd.Series(macd.macd_signal().values.flatten(), index=df.index)
 
     latest = df.iloc[-1]
 
@@ -90,14 +90,6 @@ try:
     st.markdown(f"### Signal: {color[signal]} **{signal}**")
     if reason:
         st.caption(f"📌 Reason: {reason}")
-
-    # === SIMPLE CHARTS ===
-    st.markdown("### 📈 Price & SMA (20) Chart (Last 3 Months)")
-    price_sma_df = df[["Close", "SMA_20"]]
-    st.line_chart(price_sma_df)
-
-    st.markdown("### 📉 RSI Chart")
-    st.line_chart(df["RSI"])
 
 except Exception as e:
     st.error(f"❌ Something went wrong while analyzing data: {e}")

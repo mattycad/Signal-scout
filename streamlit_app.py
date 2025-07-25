@@ -1,98 +1,197 @@
 import streamlit as st
 import yfinance as yf
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
+import ta
 
-st.set_page_config(page_title="Multi-Market Real-Time Signal Scout", layout="wide")
+st.set_page_config(page_title="📈 Signal Scout Global", layout="centered")
 
-# --- Signal generation function ---
-def generate_signals(df):
-    data = df.copy()
-    data['MA20'] = data['Close'].rolling(window=20).mean()
-    data['MA50'] = data['Close'].rolling(window=50).mean()
-    
-    delta = data['Close'].diff()
+assets = {
+    # UK Stocks
+    "AstraZeneca (AZN)": "AZN.L",
+    "HSBC Holdings (HSBA)": "HSBA.L",
+    "Shell (SHEL)": "SHEL.L",
+    "BP (BP)": "BP.L",
+    "Unilever (ULVR)": "ULVR.L",
+    "Diageo (DGE)": "DGE.L",
+    "Tesco (TSCO)": "TSCO.L",
+    "GlaxoSmithKline (GSK)": "GSK.L",
+    "Barclays (BARC)": "BARC.L",
+    "Rolls-Royce (RR)": "RR.L",
+    # US Stocks
+    "Apple (AAPL)": "AAPL",
+    "Microsoft (MSFT)": "MSFT",
+    "Amazon (AMZN)": "AMZN",
+    "Alphabet (GOOGL)": "GOOGL",
+    "Tesla (TSLA)": "TSLA",
+    "NVIDIA (NVDA)": "NVDA",
+    "JPMorgan Chase (JPM)": "JPM",
+    "Johnson & Johnson (JNJ)": "JNJ",
+    "Visa (V)": "V",
+    "Walmart (WMT)": "WMT",
+    # European Stocks
+    "SAP (SAP)": "SAP.DE",
+    "Siemens (SIE)": "SIE.DE",
+    "LVMH (MC)": "MC.PA",
+    "TotalEnergies (TTE)": "TTE.PA",
+    "Nestlé (NESN)": "NESN.SW",
+    "Roche (ROG)": "ROG.SW",
+    "ASML (ASML)": "ASML",
+    # Cryptocurrencies
+    "Bitcoin (BTC)": "BTC-USD",
+    "Ethereum (ETH)": "ETH-USD",
+    "Cardano (ADA)": "ADA-USD",
+    "Solana (SOL)": "SOL-USD",
+    "Polygon (MATIC)": "MATIC-USD",
+    "Polkadot (DOT)": "DOT-USD",
+    "Ripple (XRP)": "XRP-USD",
+    "Dogecoin (DOGE)": "DOGE-USD",
+    "Litecoin (LTC)": "LTC-USD",
+    "Chainlink (LINK)": "LINK-USD",
+    "Stellar (XLM)": "XLM-USD",
+    "VeChain (VET)": "VET-USD",
+    "Tron (TRX)": "TRX-USD",
+    "EOS (EOS)": "EOS-USD",
+    "Monero (XMR)": "XMR-USD",
+    "Bitcoin Cash (BCH)": "BCH-USD",
+    # Commodities
+    "Gold (GC=F)": "GC=F",
+    "Silver (SI=F)": "SI=F",
+    "Platinum (PL=F)": "PL=F",
+    "Palladium (PA=F)": "PA=F",
+    "Crude Oil WTI (CL=F)": "CL=F",
+    "Brent Crude (BZ=F)": "BZ=F",
+    "Natural Gas (NG=F)": "NG=F",
+    "Copper (HG=F)": "HG=F",
+    "Corn (ZC=F)": "ZC=F",
+    "Soybeans (ZS=F)": "ZS=F",
+    "Wheat (ZW=F)": "ZW=F",
+    "Sugar (SB=F)": "SB=F",
+    "Coffee (KC=F)": "KC=F",
+    # Forex
+    "EUR/USD": "EURUSD=X",
+    "GBP/USD": "GBPUSD=X",
+    "USD/JPY": "JPY=X",
+    "USD/CHF": "CHF=X",
+    "AUD/USD": "AUDUSD=X",
+    "USD/CAD": "CAD=X",
+    "NZD/USD": "NZDUSD=X",
+    "EUR/GBP": "EURGBP=X",
+    "EUR/JPY": "EURJPY=X",
+    "GBP/JPY": "GBPJPY=X"
+}
 
-    # Fix ambiguity and shape errors
-    gain = np.where(delta.values > 0, delta.values, 0)
-    loss = np.where(delta.values < 0, -delta.values, 0)
+# Session state for signals
+if "signals" not in st.session_state:
+    st.session_state.signals = {}
 
-    gain = pd.Series(gain, index=data.index)
-    loss = pd.Series(loss, index=data.index)
+st.title("📈 Signal Scout Global")
+st.write("Analyze global stocks, crypto, commodities, and currencies with Buy/Sell signals and close alerts.")
 
-    avg_gain = gain.rolling(window=14).mean()
-    avg_loss = loss.rolling(window=14).mean()
+selected_asset = st.selectbox("Choose a stock, crypto, commodity, or currency:", list(assets.keys()))
+ticker = assets[selected_asset]
+logic_mode = st.selectbox("Select Logic Mode", ["Simple", "Combined"])
 
-    rs = avg_gain / avg_loss
-    data['RSI'] = 100 - (100 / (1 + rs))
+@st.cache_data(ttl=60)
+def get_data(ticker):
+    df = yf.download(ticker, period="3mo", interval="1d", progress=False)
+    df.dropna(inplace=True)
+    return df
 
-    signal = "Hold"
-    if len(data) >= 2:
-        last = data.iloc[-1]
-        prev = data.iloc[-2]
-        if (
-            not pd.isna(prev['MA20']) and not pd.isna(prev['MA50']) and
-            not pd.isna(last['MA20']) and not pd.isna(last['MA50'])
-        ):
-            if prev['MA20'] < prev['MA50'] and last['MA20'] > last['MA50']:
-                signal = "Buy"
-            elif prev['MA20'] > prev['MA50'] and last['MA20'] < last['MA50']:
-                signal = "Sell"
+def calculate_signal(df, logic_mode):
+    close = df["Close"].squeeze()
+    rsi = ta.momentum.RSIIndicator(close).rsi()
+    sma20 = ta.trend.SMAIndicator(close, window=20).sma_indicator()
+    macd_obj = ta.trend.MACD(close)
+    macd = macd_obj.macd()
+    macd_signal = macd_obj.macd_signal()
 
-    price = data['Close'].iloc[-1] if 'Close' in data.columns else np.nan
-    ma20 = data['MA20'].iloc[-1] if 'MA20' in data.columns else np.nan
-    ma50 = data['MA50'].iloc[-1] if 'MA50' in data.columns else np.nan
-    rsi = data['RSI'].iloc[-1] if 'RSI' in data.columns else np.nan
+    latest = df.iloc[-1]
+    rsi_val = float(rsi.iloc[-1])
+    sma_val = float(sma20.iloc[-1])
+    macd_val = float(macd.iloc[-1])
+    macd_signal_val = float(macd_signal.iloc[-1])
+    close_val = float(latest["Close"])
 
-    return signal, price, ma20, ma50, rsi, data
+    signal = "HOLD"
+    reason = ""
 
-# --- Sidebar Market Selector ---
-st.title("📊 Multi-Market Real-Time Signal Scout")
-market_type = st.sidebar.selectbox("Select Market Type", ["Stocks", "Crypto", "Commodities", "Currencies"])
+    if logic_mode == "Simple":
+        if rsi_val < 30:
+            signal = "BUY"
+            reason = "RSI < 30 (Oversold)"
+        elif rsi_val > 70:
+            signal = "SELL"
+            reason = "RSI > 70 (Overbought)"
+    else:
+        if (rsi_val < 30) and (close_val > sma_val) and (macd_val > macd_signal_val):
+            signal = "BUY"
+            reason = "RSI < 30 + Price > SMA + MACD crossover"
+        elif (rsi_val > 70) and (close_val < sma_val) and (macd_val < macd_signal_val):
+            signal = "SELL"
+            reason = "RSI > 70 + Price < SMA + MACD cross down"
 
-# --- Symbol Pickers ---
-symbol = ""
-if market_type == "Stocks":
-    symbol = st.sidebar.selectbox("Select Stock", ["AAPL", "GOOGL", "MSFT", "TSLA", "AMZN"])
-elif market_type == "Crypto":
-    symbol = st.sidebar.selectbox("Select Cryptocurrency", ["BTC-USD", "ETH-USD", "XRP-USD"])
-elif market_type == "Commodities":
-    symbol = st.sidebar.selectbox("Select Commodity", ["GC=F", "CL=F", "SI=F", "NG=F"])  # Gold, Oil, Silver, Gas
-elif market_type == "Currencies":
-    symbol = st.sidebar.selectbox("Select Currency Pair", ["EURUSD=X", "GBPUSD=X", "JPY=X", "USDCAD=X"])
+    return signal, reason, rsi_val, sma_val, macd_val, macd_signal_val, close_val
 
-# --- Data Fetching and Display ---
-if symbol:
-    st.write("Loading data...")
-    try:
-        end = datetime.today()
-        start = end - timedelta(days=180)
-        data = yf.download(symbol, start=start, end=end, interval='1d')
-        
-        if data.empty or 'Close' not in data.columns:
-            st.error("❌ Failed to load valid market data.")
-        else:
-            st.success("✅ Data loaded.")
-            signal, price, ma20, ma50, rsi, full_data = generate_signals(data)
+try:
+    df = get_data(ticker)
+    signal, reason, rsi_val, sma_val, macd_val, macd_signal_val, close_val = calculate_signal(df, logic_mode)
 
-            st.subheader(f"Latest price for `{symbol}`: ${price:.2f}" if not pd.isna(price) else f"Price data unavailable for {symbol}")
-            st.markdown(f"### 🔔 Signal: `{signal}`")
-            st.markdown(f"**MA20**: `{ma20:.2f}` | **MA50**: `{ma50:.2f}` | **RSI**: `{rsi:.2f}`")
+    st.markdown("---")
+    st.subheader(f"📊 {selected_asset} Technical Summary")
+    st.metric("Latest Price", f"${close_val:.4f}" if "/" in selected_asset else f"${close_val:.2f}")
+    st.write(f"📉 RSI: **{rsi_val:.2f}**")
+    st.write(f"📈 SMA (20): **{sma_val:.2f}**")
+    st.write(f"📊 MACD: **{macd_val:.2f}** | Signal: **{macd_signal_val:.2f}**")
 
-            # --- Chart Rendering ---
-            if 'Close' in full_data.columns:
-                plot_df = pd.DataFrame()
-                plot_df['Price'] = full_data['Close']
-                plot_df['MA20'] = full_data['MA20']
-                plot_df['MA50'] = full_data['MA50']
-                plot_df = plot_df.dropna()
+    color = {"BUY": "🟢", "SELL": "🔴", "HOLD": "🟡"}
 
-                if not plot_df.empty:
-                    st.line_chart(plot_df)
-                else:
-                    st.warning("⚠️ Not enough data to plot moving averages.")
-            else:
-                st.warning("⚠️ Close price data missing. Cannot display chart.")
-    except Exception as e:
-        st.error(f"An error occurred: {str(e)}")
+    if signal == "BUY" or signal == "SELL":
+        st.markdown(f"### Signal: {color[signal]} **{signal}**")
+        if reason:
+            st.caption(f"📌 Reason: {reason}")
+    else:
+        st.markdown("### Signal: 🟡 **No actionable BUY/SELL signal**")
+
+    st.markdown("---")
+
+    prev_signal = st.session_state.signals.get(selected_asset, None)
+    st.session_state.signals[selected_asset] = signal
+
+    if prev_signal:
+        if prev_signal == "BUY" and signal == "SELL":
+            st.warning(f"⚠️ Close your BUY position in **{selected_asset}** — signal changed to SELL.")
+        elif prev_signal == "SELL" and signal == "BUY":
+            st.warning(f"⚠️ Close your SELL position in **{selected_asset}** — signal changed to BUY.")
+
+    st.subheader("🚀 Best Assets to Buy Now")
+    best_buys = []
+    best_sells = []
+
+    for name, sym in assets.items():
+        try:
+            data = get_data(sym)
+            sig, _, _, _, _, _, price = calculate_signal(data, logic_mode)
+            if sig == "BUY":
+                best_buys.append((name, price))
+            elif sig == "SELL":
+                best_sells.append((name, price))
+        except Exception:
+            continue
+
+    if best_buys:
+        for asset_name, price in best_buys:
+            st.write(f"🟢 **{asset_name}** at ${price:.2f}")
+    else:
+        st.write("No BUY signals found right now.")
+
+    st.markdown("---")
+    st.subheader("⚠️ Best Assets to Sell Now")
+    if best_sells:
+        for asset_name, price in best_sells:
+            st.write(f"🔴 **{asset_name}** at ${price:.2f}")
+    else:
+        st.write("No SELL signals found right now.")
+
+except Exception as e:
+    st.error(f"❌ Something went wrong while analyzing data: {e}")
+
+

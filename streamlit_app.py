@@ -12,7 +12,6 @@ st.write("Analyze global S&P 500 stocks (500+), crypto, commodities, forex wit
 @st.cache_data(ttl=86400)
 def load_sp500_symbols():
     try:
-        # More reliable S&P 500 dataset
         url = "https://raw.githubusercontent.com/rahulbordoloi/snp500/main/snp500.csv"
         df = pd.read_csv(url)
         if not {"Symbol", "Security"}.issubset(df.columns):
@@ -49,18 +48,26 @@ logic_mode = st.selectbox("Logic Mode:", ["Simple", "Combined"])
 @st.cache_data(ttl=300)
 def get_data(ticker):
     df = yf.download(ticker, period="3mo", interval="1d", progress=False)
+    if df.empty or "Close" not in df.columns:
+        raise ValueError(f"No valid price data for {ticker}")
     df.dropna(inplace=True)
     return df
 
 def calculate_signal(df, logic_mode):
-    close = df['Close'].squeeze()
+    close = df['Close'].dropna()
+    if len(close) < 21:
+        raise ValueError("Not enough data to calculate indicators.")
+
     rsi = ta.momentum.RSIIndicator(close).rsi()
     sma = ta.trend.SMAIndicator(close, 20).sma_indicator()
     macd = ta.trend.MACD(close)
     macd_line = macd.macd()
     macd_signal = macd.macd_signal()
 
-    vals = {k: float(v.iloc[-1]) for k, v in {
+    if any(len(s.dropna()) < 1 for s in [rsi, sma, macd_line, macd_signal]):
+        raise ValueError("Not enough indicator data.")
+
+    vals = {k: float(v.dropna().iloc[-1]) for k, v in {
         'rsi': rsi, 'sma': sma, 'macd': macd_line, 'macd_signal': macd_signal
     }.items()}
     close_val = float(close.iloc[-1])
@@ -110,7 +117,6 @@ try:
 except Exception as e:
     st.error(f"Failed to analyze selected asset: {e}")
 
-# --- Bulk scan all assets
 def scan(name, sym):
     try:
         d = get_data(sym)

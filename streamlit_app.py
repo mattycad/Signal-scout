@@ -2,15 +2,14 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import ta
-import concurrent.futures
-from datetime import datetime
 
-st.set_page_config(page_title="📈 Signal Scout: Stocks, Crypto, Commodities & Forex", layout="centered")
+st.set_page_config(page_title="📈 Signal Scout: Stocks, Crypto, Commodities & Forex", layout="wide")
+
 st.title("📈 Signal Scout: Stocks, Crypto, Commodities & Forex")
-st.write("Analyze multiple asset classes with Buy/Sell/Hold signals and alerts on changes.")
+st.markdown("Analyze multiple asset classes with Buy/Sell signals and alerts on changes.")
 
-# Asset list (add more as you want)
-assets = {
+# Asset list (add more symbols as you want)
+ASSETS = {
     "Apple (AAPL)": "AAPL",
     "Microsoft (MSFT)": "MSFT",
     "Amazon (AMZN)": "AMZN",
@@ -31,25 +30,31 @@ assets = {
     "GBP/USD": "GBPUSD=X",
     "USD/JPY": "JPY=X",
     "NZD/USD": "NZDUSD=X",
-    "USD/CAD": "USDCAD=X",
-    "USD/CHF": "USDCHF=X",
-    "AUD/USD": "AUDUSD=X"
+    "USD/CAD": "CAD=X",
+    "USD/CHF": "CHF=X",
+    "AUD/USD": "AUDUSD=X",
 }
 
-# Cache data loading for 1 hour
 @st.cache_data(ttl=3600)
-def get_data(ticker):
-    df = yf.download(ticker, period="3mo", interval="1d", progress=False)
-    df.dropna(inplace=True)
-    return df
+def fetch_data(ticker):
+    # Fetch 90 days history (1 day interval)
+    try:
+        df = yf.download(ticker, period="90d", interval="1d", progress=False)
+        if df.empty:
+            return None
+        return df
+    except Exception:
+        return None
 
 def compute_signal(df):
-    if 'Close' not in df.columns:
+    if df is None or 'Close' not in df.columns:
         return "HOLD", "No Close price data", None
 
-    close = df['Close'].dropna()
-
-    # Check for enough data points
+    close = df['Close']
+    # Ensure 1D Series (fix error)
+    if isinstance(close, pd.DataFrame):
+        close = close.squeeze()
+    close = close.dropna()
     if close.empty or len(close) < 21:
         return "HOLD", "Insufficient Close price data", None
 
@@ -60,7 +65,6 @@ def compute_signal(df):
         macd_line = macd.macd()
         macd_signal = macd.macd_signal()
 
-        # Drop NaNs to get latest valid values
         rsi_val = rsi.dropna().iloc[-1]
         sma_val = sma20.dropna().iloc[-1]
         macd_val = macd_line.dropna().iloc[-1]
@@ -77,60 +81,51 @@ def compute_signal(df):
     except Exception as e:
         return "HOLD", f"Indicator calculation error: {e}", None
 
-# Session state for alerts
-if 'prev_buy' not in st.session_state:
+# For alerting changes between runs (stored in session_state)
+if "prev_buy" not in st.session_state:
     st.session_state.prev_buy = set()
-if 'prev_sell' not in st.session_state:
+if "prev_sell" not in st.session_state:
     st.session_state.prev_sell = set()
+
+def alert_changes(current_signals, prev_signals, signal_type):
+    current_names = set([name for name, _, _ in current_signals])
+    added = current_names - prev_signals
+    removed = prev_signals - current_names
+
+    for name in added:
+        st.balloons()
+        st.toast(f"🔔 New {signal_type}: {name}")
+
+    return current_names
+
+results = []
+
+with st.spinner("Fetching and analyzing data..."):
+    for name, ticker in ASSETS.items():
+        df = fetch_data(ticker)
+        signal, reason, price = compute_signal(df)
+        results.append((name, signal, reason, price))
+
+# Separate BUY and SELL signals; ignore HOLD from display
+buys = [(n, r, p) for n, s, r, p in results if s == "BUY"]
+sells = [(n, r, p) for n, s, r, p in results if s == "SELL"]
 
 st.subheader("🚀 Asset Signals")
 
-def scan_asset(name, ticker):
-    try:
-        df = get_data(ticker)
-        signal, reason, price = compute_signal(df)
-        return (name, signal, reason, price)
-    except Exception as e:
-        return (name, "HOLD", f"Error loading data: {e}", None)
-
-with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-    results = list(executor.map(lambda item: scan_asset(*item), assets.items()))
-
-buys = [(n, r, p) for n, s, r, p in results if s == "BUY"]
-sells = [(n, r, p) for n, s, r, p in results if s == "SELL"]
-holds = [(n, r, p) for n, s, r, p in results if s == "HOLD"]
-
-def alert_changes(new_list, old_set, label):
-    new_set = set(name for name, _, _ in new_list)
-    added = new_set - old_set
-    removed = old_set - new_set
-
-    for name in added:
-        st.success(f"🔔 New {label} Signal: {name}")
-    for name in removed:
-        st.warning(f"💡 Consider Closing: {name} is no longer a {label} signal")
-
-    return new_set
-
-st.write("🟢 Buy Signals:")
+st.markdown("### 🟢 Buy Signals")
 if buys:
     st.session_state.prev_buy = alert_changes(buys, st.session_state.prev_buy, "BUY")
     for name, reason, price in buys:
-        st.write(f"🟢 {name} — ${price:.2f} — {reason}")
+        st.write(f"🟢 **{name}** — ${price:.2f} — {reason}")
 else:
     st.write("No BUY signals.")
 
-st.write("🔴 Sell Signals:")
+st.markdown("### 🔴 Sell Signals")
 if sells:
     st.session_state.prev_sell = alert_changes(sells, st.session_state.prev_sell, "SELL")
     for name, reason, price in sells:
-        st.write(f"🔴 {name} — ${price:.2f} — {reason}")
+        st.write(f"🔴 **{name}** — ${price:.2f} — {reason}")
 else:
     st.write("No SELL signals.")
 
-st.write("🟡 Hold Signals:")
-for name, reason, price in holds:
-    price_str = f"${price:.2f}" if price else "N/A"
-    st.write(f"🟡 {name}: {price_str} — {reason}")
-
-st.markdown(f"---\nLast update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.markdown(f"Last update: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")

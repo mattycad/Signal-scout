@@ -22,7 +22,6 @@ def fetch_yahoo_data(ticker, period='1mo', interval='5m'):
 
 def fetch_crypto_price(symbol):
     """Fetch current price for a crypto from CoinGecko API."""
-    # CoinGecko simple price API endpoint
     url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=usd"
     try:
         r = requests.get(url)
@@ -49,7 +48,7 @@ def RSI(series, period=14):
 
 def generate_signals(data):
     """
-    Simple signal logic based on:
+    Signal logic based on:
     - 20 MA and 50 MA crossover
     - RSI oversold (<30) and overbought (>70)
     """
@@ -58,23 +57,26 @@ def generate_signals(data):
     data['MA50'] = moving_average(data, 50)
     data['RSI'] = RSI(data['Close'], 14)
 
-    # Latest row for signal
     last = data.iloc[-1]
     prev = data.iloc[-2]
 
     signal = "Hold"
 
-    # MA Crossover
-    if prev['MA20'] < prev['MA50'] and last['MA20'] > last['MA50']:
-        signal = "Buy"
-    elif prev['MA20'] > prev['MA50'] and last['MA20'] < last['MA50']:
-        signal = "Sell"
+    # Check for NaNs before comparison
+    if (
+        not pd.isna(prev['MA20']) and not pd.isna(prev['MA50']) and
+        not pd.isna(last['MA20']) and not pd.isna(last['MA50'])
+    ):
+        if prev['MA20'] < prev['MA50'] and last['MA20'] > last['MA50']:
+            signal = "Buy"
+        elif prev['MA20'] > prev['MA50'] and last['MA20'] < last['MA50']:
+            signal = "Sell"
 
-    # RSI override
-    if last['RSI'] < 30:
-        signal = "Buy"
-    elif last['RSI'] > 70:
-        signal = "Sell"
+    if not pd.isna(last['RSI']):
+        if last['RSI'] < 30:
+            signal = "Buy"
+        elif last['RSI'] > 70:
+            signal = "Sell"
 
     return signal, last['Close'], last['MA20'], last['MA50'], last['RSI']
 
@@ -119,7 +121,6 @@ if market != 'Cryptocurrency':
 else:
     # Crypto
     crypto = st.selectbox("Select Cryptocurrency", list(crypto_map.values()))
-    # Map symbol to coingecko ID
     coingecko_id = None
     for k, v in crypto_map.items():
         if v == crypto:
@@ -131,15 +132,12 @@ else:
         st.subheader(f"Latest price for {crypto}: ${price:.4f}")
         st.write("Signals for crypto are based on price momentum (demo).")
 
-        # For simplicity, demo a moving average on last 30 days close from CoinGecko market chart API
-        # We'll fetch historical price data for crypto here:
-
         @st.cache_data(ttl=600)
         def fetch_crypto_historical(coin_id, days=30):
             url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart?vs_currency=usd&days={days}&interval=daily"
             r = requests.get(url)
             r.raise_for_status()
-            prices = r.json()['prices']  # List of [timestamp, price]
+            prices = r.json()['prices']
             df = pd.DataFrame(prices, columns=['timestamp', 'price'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df.set_index('timestamp', inplace=True)

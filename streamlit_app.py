@@ -3,11 +3,12 @@ import yfinance as yf
 import pandas as pd
 import ta
 import concurrent.futures
+import datetime
 
 st.set_page_config(page_title="📈 Signal Scout Global", layout="centered")
 st.title("📈 Signal Scout Global")
-st.write("Analyze global S&P 500 stocks (500+), crypto, commodities, forex with Buy/Sell/Hold 
-         
+st.write("Analyze global S&P 500 stocks (500+), crypto, commodities, forex with Buy/Sell/Hold signals.")
+
 @st.cache_data(ttl=86400)
 def load_sp500_symbols():
     url = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.csv"
@@ -75,10 +76,10 @@ if 'prev_buy' not in st.session_state:
 if 'prev_sell' not in st.session_state:
     st.session_state.prev_sell = []
 
-# --- Show selected asset
 try:
-    df = get_data(ticker)
-    sig, reason, rsi_val, sma_val, macd_val, macd_sig_val, close_val = calculate_signal(df, logic_mode)
+    with st.spinner("📡 Downloading asset data..."):
+        df = get_data(ticker)
+        sig, reason, rsi_val, sma_val, macd_val, macd_sig_val, close_val = calculate_signal(df, logic_mode)
 
     st.markdown("---")
     st.subheader(f"📊 {selected_asset}")
@@ -94,7 +95,9 @@ try:
     dfc = df[['Close']].copy()
     dfc["SMA 20"] = ta.trend.SMAIndicator(df['Close'], 20).sma_indicator()
     dfc.dropna(inplace=True)
-    st.line_chart(dfc)
+
+    with st.expander("📈 Show Price Chart"):
+        st.line_chart(dfc)
 
 except Exception as e:
     st.error(f"Failed to analyze selected asset: {e}")
@@ -111,12 +114,13 @@ def scan(name, sym):
 st.markdown("---")
 st.subheader("📈 Scanning All Assets")
 
-with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
-    raw = list(ex.map(lambda item: scan(*item), assets.items()))
-results = [r for r in raw if r]
+with st.spinner("🔍 Scanning for Buy/Sell signals..."):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+        raw = list(ex.map(lambda item: scan(*item), assets.items()))
+    results = [r for r in raw if r]
 
-buys = [(n, p) for n, s, p in results if s == "BUY"]
-sells = [(n, p) for n, s, p in results if s == "SELL"]
+    buys = [(n, p) for n, s, p in results if s == "BUY"]
+    sells = [(n, p) for n, s, p in results if s == "SELL"]
 
 def detect_changes(new, old, label):
     new_names = set(n for n, _ in new)
@@ -146,3 +150,6 @@ if sells:
         st.write(f"🔴 {n} — ${p:.2f}")
 else:
     st.write("No SELL signals.")
+
+st.markdown("---")
+st.caption(f"Last updated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

@@ -1,11 +1,13 @@
-st.write("✅ App started loading...")import streamlit as st
+import streamlit as st
 import yfinance as yf
 import pandas as pd
 import ta
 
+# === CONFIG ===
 st.set_page_config(page_title="Signal Scout", layout="centered")
 
 st.title("📈 Signal Scout")
+st.write("✅ App started loading...")
 st.write("Get Buy/Sell/Hold signals for stocks & crypto based on technical indicators.")
 
 # === INPUTS ===
@@ -14,7 +16,14 @@ logic_mode = st.selectbox("Select Logic Mode", ["Simple", "Combined"])
 
 st.markdown("---")
 
+# === HELPER FUNCTION ===
 @st.cache_data
+def get_data(ticker):
+    df = yf.download(ticker, period="3mo", interval="1d")
+    df.dropna(inplace=True)
+    return df
+
+# === MAIN LOGIC ===
 try:
     df = get_data(ticker)
 
@@ -38,15 +47,23 @@ try:
         elif latest["RSI"] > 70:
             signal = "SELL"
             reason = "RSI > 70 (overbought)"
-    else:  # Combined
-        if latest["RSI"] < 30 and latest["Close"] > latest["SMA_20"] and latest["MACD"] > latest["MACD_Signal"]:
+    else:  # Combined logic
+        if (
+            latest["RSI"] < 30 and
+            latest["Close"] > latest["SMA_20"] and
+            latest["MACD"] > latest["MACD_Signal"]
+        ):
             signal = "BUY"
             reason = "RSI < 30 AND Price > SMA AND MACD crossover"
-        elif latest["RSI"] > 70 and latest["Close"] < latest["SMA_20"] and latest["MACD"] < latest["MACD_Signal"]:
+        elif (
+            latest["RSI"] > 70 and
+            latest["Close"] < latest["SMA_20"] and
+            latest["MACD"] < latest["MACD_Signal"]
+        ):
             signal = "SELL"
             reason = "RSI > 70 AND Price < SMA AND MACD cross down"
 
-    # === DISPLAY ===
+    # === DISPLAY OUTPUT ===
     st.subheader(f"{ticker.upper()} Analysis")
     st.write(f"📈 Latest Price: **${latest['Close']:.2f}**")
     st.write(f"📊 RSI: **{latest['RSI']:.2f}**")
@@ -60,4 +77,4 @@ try:
         st.caption(f"🚀 Reason: {reason}")
 
 except Exception as e:
-    st.error(f"Something went wrong: {e}")
+    st.error(f"❌ Something went wrong: {e}")

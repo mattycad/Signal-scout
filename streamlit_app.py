@@ -1,187 +1,158 @@
 import streamlit as st
 import yfinance as yf
+import pandas as pd
 import ta
 
-st.set_page_config(page_title="📈 Signal Scout Global", layout="centered")
+# === STREAMLIT SETUP ===
+st.set_page_config(page_title="📈 Signal Scout Global", layout="wide")
 st.title("📈 Signal Scout Global")
-st.write("Analyze real-time global stocks, crypto, commodities, and currencies with Buy/Sell/Hold signals.")
+st.write("Real-time signals for global stocks, crypto, commodities & currencies.")
 
+# === CATEGORIES ===
 assets = {
-    # UK Stocks
-    "AstraZeneca (AZN)": "AZN.L",
-    "HSBC Holdings (HSBA)": "HSBA.L",
-    "Shell (SHEL)": "SHEL.L",
-    "BP (BP)": "BP.L",
-    "Unilever (ULVR)": "ULVR.L",
-    "Diageo (DGE)": "DGE.L",
-    "Tesco (TSCO)": "TSCO.L",
-    "GlaxoSmithKline (GSK)": "GSK.L",
-    "Barclays (BARC)": "BARC.L",
-    "Rolls-Royce (RR)": "RR.L",
-
-    # US Stocks
-    "Apple (AAPL)": "AAPL",
-    "Microsoft (MSFT)": "MSFT",
-    "Amazon (AMZN)": "AMZN",
-    "Alphabet (GOOGL)": "GOOGL",
-    "Tesla (TSLA)": "TSLA",
-    "NVIDIA (NVDA)": "NVDA",
-    "JPMorgan Chase (JPM)": "JPM",
-    "Johnson & Johnson (JNJ)": "JNJ",
-    "Visa (V)": "V",
-    "Walmart (WMT)": "WMT",
-
-    # European Stocks
-    "SAP (SAP)": "SAP.DE",
-    "Siemens (SIE)": "SIE.DE",
-    "LVMH (MC)": "MC.PA",
-    "TotalEnergies (TTE)": "TTE.PA",
-    "Nestlé (NESN)": "NESN.SW",
-    "Roche (ROG)": "ROG.SW",
-    "ASML (ASML)": "ASML",
-
-    # Cryptocurrencies
-    "Bitcoin (BTC)": "BTC-USD",
-    "Ethereum (ETH)": "ETH-USD",
-    "Cardano (ADA)": "ADA-USD",
-    "Solana (SOL)": "SOL-USD",
-    "Polygon (MATIC)": "MATIC-USD",
-    "Polkadot (DOT)": "DOT-USD",
-    "Ripple (XRP)": "XRP-USD",
-    "Dogecoin (DOGE)": "DOGE-USD",
-    "Litecoin (LTC)": "LTC-USD",
-    "Chainlink (LINK)": "LINK-USD",
-    "Stellar (XLM)": "XLM-USD",
-    "VeChain (VET)": "VET-USD",
-    "Tron (TRX)": "TRX-USD",
-    "EOS (EOS)": "EOS-USD",
-    "Monero (XMR)": "XMR-USD",
-    "Bitcoin Cash (BCH)": "BCH-USD",
-
-    # Commodities
-    "Gold (GC=F)": "GC=F",
-    "Silver (SI=F)": "SI=F",
-    "Platinum (PL=F)": "PL=F",
-    "Palladium (PA=F)": "PA=F",
-    "Crude Oil WTI (CL=F)": "CL=F",
-    "Brent Crude (BZ=F)": "BZ=F",
-    "Natural Gas (NG=F)": "NG=F",
-    "Copper (HG=F)": "HG=F",
-    "Corn (ZC=F)": "ZC=F",
-    "Soybeans (ZS=F)": "ZS=F",
-    "Wheat (ZW=F)": "ZW=F",
-    "Sugar (SB=F)": "SB=F",
-    "Coffee (KC=F)": "KC=F",
-
-    # Currencies (Forex pairs)
-    "EUR/USD": "EURUSD=X",
-    "GBP/USD": "GBPUSD=X",
-    "USD/JPY": "JPY=X",
-    "USD/CHF": "CHF=X",
-    "AUD/USD": "AUDUSD=X",
-    "USD/CAD": "CAD=X",
-    "NZD/USD": "NZDUSD=X",
-    "EUR/GBP": "EURGBP=X",
-    "EUR/JPY": "EURJPY=X",
-    "GBP/JPY": "GBPJPY=X"
+    "STOCKS": {
+        "Apple (AAPL)": "AAPL",
+        "Tesla (TSLA)": "TSLA",
+        "Amazon (AMZN)": "AMZN",
+        "Google (GOOGL)": "GOOGL",
+        "Microsoft (MSFT)": "MSFT",
+        "NVIDIA (NVDA)": "NVDA",
+        "HSBC (HSBA.L)": "HSBA.L",
+        "Shell (SHEL.L)": "SHEL.L",
+        "Rolls-Royce (RR.L)": "RR.L"
+    },
+    "CRYPTO": {
+        "Bitcoin (BTC)": "BTC-USD",
+        "Ethereum (ETH)": "ETH-USD",
+        "Solana (SOL)": "SOL-USD",
+        "Cardano (ADA)": "ADA-USD",
+        "XRP": "XRP-USD",
+        "Dogecoin (DOGE)": "DOGE-USD",
+        "Litecoin (LTC)": "LTC-USD"
+    },
+    "COMMODITIES": {
+        "Gold": "GC=F",
+        "Silver": "SI=F",
+        "Crude Oil": "CL=F",
+        "Natural Gas": "NG=F"
+    },
+    "CURRENCIES": {
+        "EUR/USD": "EURUSD=X",
+        "GBP/USD": "GBPUSD=X",
+        "USD/JPY": "JPY=X",
+        "USD/CHF": "CHF=X",
+        "USD/CAD": "CAD=X"
+    }
 }
 
-selected_asset = st.selectbox("Choose a stock, crypto, commodity, or currency:", list(assets.keys()))
-ticker = assets[selected_asset]
+# === LOGIC MODE ===
+logic_mode = st.selectbox("Select Signal Logic Mode", ["Simple", "Combined"])
 
-logic_mode = st.selectbox("Select Logic Mode", ["Simple", "Combined"])
-
-@st.cache_data(ttl=60)
+# === DATA CACHE ===
+@st.cache_data(ttl=600)
 def get_data(ticker):
     df = yf.download(ticker, period="3mo", interval="1d", progress=False)
     df.dropna(inplace=True)
     return df
 
-def calculate_signal(df, logic_mode):
-    close = df["Close"].squeeze()
-    if close.ndim != 1:
-        close = close.iloc[:, 0]
-
+# === SIGNAL FUNCTION ===
+def calculate_signal(df, logic="Simple"):
+    close = df["Close"]
     rsi = ta.momentum.RSIIndicator(close).rsi()
-    sma20 = ta.trend.SMAIndicator(close, window=20).sma_indicator()
-    macd_obj = ta.trend.MACD(close)
-    macd = macd_obj.macd()
-    macd_signal = macd_obj.macd_signal()
+    sma_20 = ta.trend.SMAIndicator(close, window=20).sma_indicator()
+    macd = ta.trend.MACD(close)
+    macd_line = macd.macd()
+    macd_signal = macd.macd_signal()
 
-    latest = df.iloc[-1]
-
-    rsi_val = float(rsi.iloc[-1])
-    sma_val = float(sma20.iloc[-1])
-    macd_val = float(macd.iloc[-1])
-    macd_signal_val = float(macd_signal.iloc[-1])
-    close_val = float(latest["Close"])
+    latest = df.index[-1]
+    latest_close = close.iloc[-1]
+    latest_rsi = rsi.iloc[-1]
+    latest_sma = sma_20.iloc[-1]
+    latest_macd = macd_line.iloc[-1]
+    latest_macd_sig = macd_signal.iloc[-1]
 
     signal = "HOLD"
     reason = ""
 
-    if logic_mode == "Simple":
-        if rsi_val < 30:
+    if logic == "Simple":
+        if latest_rsi < 30:
             signal = "BUY"
             reason = "RSI < 30 (Oversold)"
-        elif rsi_val > 70:
+        elif latest_rsi > 70:
             signal = "SELL"
             reason = "RSI > 70 (Overbought)"
     else:
-        if (rsi_val < 30) and (close_val > sma_val) and (macd_val > macd_signal_val):
+        if latest_rsi < 30 and latest_close > latest_sma and latest_macd > latest_macd_sig:
             signal = "BUY"
             reason = "RSI < 30 + Price > SMA + MACD crossover"
-        elif (rsi_val > 70) and (close_val < sma_val) and (macd_val < macd_signal_val):
+        elif latest_rsi > 70 and latest_close < latest_sma and latest_macd < latest_macd_sig:
             signal = "SELL"
             reason = "RSI > 70 + Price < SMA + MACD cross down"
 
-    return signal, reason, rsi_val, sma_val, macd_val, macd_signal_val, close_val
+    return signal, reason, latest_rsi, latest_sma, latest_macd, latest_macd_sig, latest_close
 
-try:
-    df = get_data(ticker)
-    signal, reason, rsi_val, sma_val, macd_val, macd_signal_val, close_val = calculate_signal(df, logic_mode)
+# === SESSION STATE FOR ALERTS ===
+if "prev_buys" not in st.session_state:
+    st.session_state.prev_buys = set()
+if "prev_sells" not in st.session_state:
+    st.session_state.prev_sells = set()
 
-    st.markdown("---")
-    st.subheader(f"📊 {selected_asset} Technical Summary")
-    st.metric("Latest Price", f"${close_val:.4f}" if "Currency" in selected_asset or "/" in selected_asset else f"${close_val:.2f}")
-    st.write(f"📉 RSI: **{rsi_val:.2f}**")
-    st.write(f"📈 SMA (20): **{sma_val:.2f}**")
-    st.write(f"📊 MACD: **{macd_val:.2f}** | Signal: **{macd_signal_val:.2f}**")
+# === BEST BUYS & SELLS ===
+st.header("📊 Market Signal Overview")
 
-    color = {"BUY": "🟢", "SELL": "🔴", "HOLD": "🟡"}
-    st.markdown(f"### Signal: {color[signal]} **{signal}**")
-    if reason:
-        st.caption(f"📌 Reason: {reason}")
+buy_assets = set()
+sell_assets = set()
+buy_prices = {}
+sell_prices = {}
 
-    st.markdown("---")
-    st.subheader("🚀 Best Assets to Buy Now")
+with st.spinner("Analyzing all assets..."):
+    for category, items in assets.items():
+        st.subheader(f"🔍 {category}")
+        for name, symbol in items.items():
+            try:
+                df = get_data(symbol)
+                signal, reason, rsi, sma, macd, macd_sig, price = calculate_signal(df, logic_mode)
 
-    best_buys = []
-    best_sells = []
-    for name, sym in assets.items():
-        try:
-            data = get_data(sym)
-            sig, _, _, _, _, _, price = calculate_signal(data, logic_mode)
-            if sig == "BUY":
-                best_buys.append((name, price))
-            elif sig == "SELL":
-                best_sells.append((name, price))
-        except Exception:
-            continue
+                if signal == "BUY":
+                    buy_assets.add(name)
+                    buy_prices[name] = price
+                elif signal == "SELL":
+                    sell_assets.add(name)
+                    sell_prices[name] = price
 
-    if best_buys:
-        for asset_name, price in best_buys:
-            st.write(f"🟢 **{asset_name}** at ${price:.2f}")
-    else:
-        st.write("No BUY signals found right now.")
+                st.write(f"**{name}** | Signal: `{signal}` | Price: ${price:.2f} | RSI: {rsi:.2f}")
 
-    st.markdown("---")
-    st.subheader("⚠️ Best Assets to Sell Now")
+            except Exception as e:
+                st.warning(f"⚠️ Could not analyze {name}: {e}")
 
-    if best_sells:
-        for asset_name, price in best_sells:
-            st.write(f"🔴 **{asset_name}** at ${price:.2f}")
-    else:
-        st.write("No SELL signals found right now.")
+# === ALERTS ===
+new_buys = buy_assets - st.session_state.prev_buys
+new_sells = sell_assets - st.session_state.prev_sells
 
-except Exception as e:
-    st.error(f"❌ Something went wrong while analyzing data: {e}")
+if new_buys:
+    for name in new_buys:
+        st.success(f"🛎️ New BUY signal: **{name}** at ${buy_prices[name]:.2f}")
+
+if new_sells:
+    for name in new_sells:
+        st.warning(f"🔔 New SELL signal: **{name}** at ${sell_prices[name]:.2f}")
+
+# === DISPLAY CURRENT LISTS ===
+st.markdown("---")
+st.subheader("🚀 Current Best BUY Signals")
+if buy_assets:
+    for name in sorted(buy_assets):
+        st.write(f"🟢 **{name}** at ${buy_prices[name]:.2f}")
+else:
+    st.write("No strong BUY signals now.")
+
+st.subheader("⚠️ Current Best SELL Signals")
+if sell_assets:
+    for name in sorted(sell_assets):
+        st.write(f"🔴 **{name}** at ${sell_prices[name]:.2f}")
+else:
+    st.write("No strong SELL signals now.")
+
+# === UPDATE SESSION STATE ===
+st.session_state.prev_buys = buy_assets
+st.session_state.prev_sells = sell_assets

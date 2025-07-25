@@ -1,6 +1,10 @@
 import streamlit as st
 import yfinance as yf
 import ta
+from streamlit_autorefresh import st_autorefresh
+
+# Auto-refresh every 5 minutes (300,000 ms)
+st_autorefresh(interval=300_000, limit=None, key="datarefresh")
 
 st.set_page_config(page_title="📈 Signal Scout Global", layout="centered")
 st.title("📈 Signal Scout Global")
@@ -128,7 +132,6 @@ def calculate_signal(df, logic_mode):
 
     return signal, reason, rsi_val, sma_val, macd_val, macd_signal_val, close_val
 
-# Store previous signals in session to detect signal changes (for close alerts)
 if "signals" not in st.session_state:
     st.session_state.signals = {}
 
@@ -145,7 +148,7 @@ try:
 
     color = {"BUY": "🟢", "SELL": "🔴", "HOLD": "🟡"}
 
-    # Only show BUY or SELL signals, never HOLD
+    # Show only BUY or SELL, no HOLD
     if signal == "BUY" or signal == "SELL":
         st.markdown(f"### Signal: {color[signal]} **{signal}**")
         if reason:
@@ -155,18 +158,16 @@ try:
 
     st.markdown("---")
 
-    # Update session state for selected asset
     prev_signal = st.session_state.signals.get(selected_asset, None)
     st.session_state.signals[selected_asset] = signal
 
-    # Close position alert: if previous was BUY and now SELL, or vice versa
+    # Close position alert if signal flips
     if prev_signal:
         if prev_signal == "BUY" and signal == "SELL":
             st.warning(f"⚠️ Close your BUY position in **{selected_asset}** — signal changed to SELL.")
         elif prev_signal == "SELL" and signal == "BUY":
             st.warning(f"⚠️ Close your SELL position in **{selected_asset}** — signal changed to BUY.")
 
-    # Now find best buys and sells across all assets, ignoring HOLDs
     st.subheader("🚀 Best Assets to Buy Now")
     best_buys = []
     best_sells = []

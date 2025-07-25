@@ -11,12 +11,20 @@ st.write("Analyze global S&P 500 stocks (500+), crypto, commodities, forex wit
 
 @st.cache_data(ttl=86400)
 def load_sp500_symbols():
-    url = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.csv"
-    df = pd.read_csv(url)
-    required_cols = {"Symbol", "Name"}
-    if not required_cols.issubset(df.columns):
-        raise ValueError(f"CSV missing required columns: {required_cols - set(df.columns)}")
-    return dict(zip(df['Symbol'] + " (" + df['Name'] + ")", df['Symbol'] + ".US"))
+    try:
+        # More reliable S&P 500 dataset
+        url = "https://raw.githubusercontent.com/rahulbordoloi/snp500/main/snp500.csv"
+        df = pd.read_csv(url)
+        if not {"Symbol", "Security"}.issubset(df.columns):
+            raise ValueError("CSV missing expected columns.")
+        return dict(zip(df['Symbol'] + " (" + df['Security'] + ")", df['Symbol'] + ".US"))
+    except Exception as e:
+        st.warning("⚠️ Could not load S&P 500 symbols. Falling back to default.")
+        return {
+            "Apple (AAPL)": "AAPL.US",
+            "Microsoft (MSFT)": "MSFT.US",
+            "Amazon (AMZN)": "AMZN.US"
+        }
 
 sp500_assets = load_sp500_symbols()
 

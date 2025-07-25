@@ -22,7 +22,7 @@ def get_data(ticker):
 try:
     df = get_data(ticker)
 
-    # Ensure Close column is a 1D Series for ta
+    # Ensure Close column is 1D Series for ta
     close_series = df["Close"].squeeze()
 
     # === TECHNICAL INDICATORS ===
@@ -34,39 +34,38 @@ try:
 
     latest = df.iloc[-1]
 
+    # Cast values to float scalars to avoid ambiguous truth value errors
+    rsi = float(latest["RSI"])
+    close = float(latest["Close"])
+    sma_20 = float(latest["SMA_20"])
+    macd_val = float(latest["MACD"])
+    macd_signal = float(latest["MACD_Signal"])
+
     # === SIGNAL LOGIC ===
     signal = "HOLD"
     reason = ""
 
     if logic_mode == "Simple":
-        if latest["RSI"] < 30:
+        if rsi < 30:
             signal = "BUY"
             reason = "RSI < 30 (Oversold)"
-        elif latest["RSI"] > 70:
+        elif rsi > 70:
             signal = "SELL"
             reason = "RSI > 70 (Overbought)"
     else:  # Combined logic
-        if (
-            latest["RSI"] < 30 and
-            latest["Close"] > latest["SMA_20"] and
-            latest["MACD"] > latest["MACD_Signal"]
-        ):
+        if rsi < 30 and close > sma_20 and macd_val > macd_signal:
             signal = "BUY"
             reason = "RSI < 30 + Price > SMA + MACD crossover"
-        elif (
-            latest["RSI"] > 70 and
-            latest["Close"] < latest["SMA_20"] and
-            latest["MACD"] < latest["MACD_Signal"]
-        ):
+        elif rsi > 70 and close < sma_20 and macd_val < macd_signal:
             signal = "SELL"
             reason = "RSI > 70 + Price < SMA + MACD cross down"
 
     # === DISPLAY ===
     st.subheader(f"{ticker.upper()} Analysis")
-    st.metric("Latest Price", f"${latest['Close']:.2f}")
-    st.write(f"📊 RSI: **{latest['RSI']:.2f}**")
-    st.write(f"📈 SMA (20): **{latest['SMA_20']:.2f}**")
-    st.write(f"📉 MACD: **{latest['MACD']:.2f}** | Signal: **{latest['MACD_Signal']:.2f}**")
+    st.metric("Latest Price", f"${close:.2f}")
+    st.write(f"📊 RSI: **{rsi:.2f}**")
+    st.write(f"📈 SMA (20): **{sma_20:.2f}**")
+    st.write(f"📉 MACD: **{macd_val:.2f}** | Signal: **{macd_signal:.2f}**")
 
     st.markdown("---")
     color = {"BUY": "🟢", "SELL": "🔴", "HOLD": "🟡"}

@@ -2,52 +2,22 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import requests
 
-st.set_page_config(page_title="Multi-Market Signal Scout", layout="wide")
-
-# --- Utility Functions ---
-
-def fetch_yahoo_data(ticker, period='1mo', interval='5m'):
-    try:
-        data = yf.download(ticker, period=period, interval=interval, progress=False)
-        if data.empty:
-            st.error(f"No data for ticker {ticker}")
-        return data
-    except Exception as e:
-        st.error(f"Error fetching data for {ticker}: {e}")
-        return None
-
-def fetch_crypto_price(symbol):
-    url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=usd"
-    try:
-        r = requests.get(url)
-        r.raise_for_status()
-        price = r.json()[symbol]['usd']
-        return price
-    except Exception as e:
-        st.error(f"Error fetching crypto price for {symbol}: {e}")
-        return None
-
-# --- Technical Indicators ---
-
-def moving_average(data, window):
-    return data['Close'].rolling(window=window).mean()
-
+# RSI calculation helper
 def RSI(series, period=14):
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    RS = gain / loss
-    return 100 - (100 / (1 + RS))
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
-# --- Signal Generation ---
-
-def generate_signals(data):
+# Signal generator, now accepts dynamic price column name
+def generate_signals(data, price_col='Close'):
     data = data.copy()
-    data['MA20'] = moving_average(data, 20)
-    data['MA50'] = moving_average(data, 50)
-    data['RSI'] = RSI(data['Close'], 14)
+    data['MA20'] = data[price_col].rolling(window=20).mean()
+    data['MA50'] = data[price_col].rolling(window=50).mean()
+    data['RSI'] = RSI(data[price_col], 14)
 
     signal = "Hold"
 
@@ -59,7 +29,7 @@ def generate_signals(data):
     last_ma20 = data['MA20'].iloc[-1]
     last_ma50 = data['MA50'].iloc[-1]
     last_rsi = data['RSI'].iloc[-1]
-    last_close = data['Close'].iloc[-1]
+    last_close = data[price_col].iloc[-1]
 
     if not any(pd.isna([prev_ma20, prev_ma50, last_ma20, last_ma50])):
         if prev_ma20 < prev_ma50 and last_ma20 > last_ma50:
@@ -75,41 +45,44 @@ def generate_signals(data):
 
     return signal, last_close, last_ma20, last_ma50, last_rsi
 
-# --- Asset Lists ---
-
-stock_symbols = ['AAPL', 'MSFT', 'TSLA', 'GOOGL', 'AMZN']
-commodity_symbols = ['GC=F', 'CL=F', 'SI=F']
-currency_pairs = ['EURUSD=X', 'JPY=X', 'GBPUSD=X']
-crypto_map = {
-    'bitcoin': 'BTC',
-    'ethereum': 'ETH',
-    'ripple': 'XRP',
-    'cardano': 'ADA'
-}
-
-# --- Streamlit UI ---
 
 st.title("Multi-Market Real-Time Signal Scout")
 
-market = st.selectbox("Select Market Type", ['Stocks', 'Commodities', 'Currencies', 'Cryptocurrency'])
+market_type = st.selectbox("Select Market Type", ["Stocks", "Cryptocurrency", "Currencies", "Commodities"])
 
-if market != 'Cryptocurrency':
-    if market == 'Stocks':
-        symbol = st.selectbox("Select Stock", stock_symbols)
-    elif market == 'Commodities':
-        symbol = st.selectbox("Select Commodity", commodity_symbols)
+# Define your symbol lists for each market type here
+stocks = ["AAPL", "MSFT", "TSLA", "GOOGL"]
+cryptos = ["BTC-USD", "ETH-USD", "DOGE-USD"]
+currencies = ["EURUSD=X", "JPY=X", "GBPUSD=X"]
+commodities = ["GC=F", "CL=F", "SI=F"]
+
+if market_type == "Stocks":
+    symbol = st.selectbox("Select Stock", stocks)
+elif market_type == "Cryptocurrency":
+    symbol = st.selectbox("Select Crypto", cryptos)
+elif market_type == "Currencies":
+    symbol = st.selectbox("Select Currency Pair", currencies)
+else:
+    symbol = st.selectbox("Select Commodity", commodities)
+
+data_load_state = st.text("Loading data...")
+data = yf.download(symbol, period="2mo", interval="1d", progress=False)
+
+if data is None or data.empty:
+    st.error("Failed to load data for symbol: " + symbol)
+else:
+    # Determine the price column: prefer 'Close', fallback 'Adj Close'
+    if 'Close' in data.columns:
+        price_col = 'Close'
+    elif 'Adj Close' in data.columns:
+        price_col = 'Adj Close'
     else:
-        symbol = st.selectbox("Select Currency Pair", currency_pairs)
+        st.error("No 'Close' or 'Adj Close' column found in data.")
+        price_col = None
 
-    data_load_state = st.text("Loading data...")
-    data = fetch_yahoo_data(symbol)
-    if data is not None and not data.empty:
-        signal, price, ma20, ma50, rsi = generate_signals(data)
+    if price_col:
+        signal, price, ma20, ma50, rsi = generate_signals(data, price_col=price_col)
         data_load_state.text("Data loaded.")
-
-        # FIX: Add MA columns to original DataFrame before plotting
-        data['MA20'] = data['Close'].rolling(window=20).mean()
-        data['MA50'] = data['Close'].rolling(window=50).mean()
 
         try:
             price = float(price)
@@ -119,57 +92,20 @@ if market != 'Cryptocurrency':
         if pd.isna(price):
             st.subheader(f"Latest price for {symbol}: Data unavailable")
         else:
-            st.subheader(f"Latest price for {symbol}: ${price:.2f}")
+            st.subheader(f"Latest price for {symbol}: ${price:.4f}")
 
         st.write(f"Signal: **{signal}**")
+
         if not pd.isna(ma20) and not pd.isna(ma50) and not pd.isna(rsi):
-            st.write(f"MA20: {ma20:.2f} | MA50: {ma50:.2f} | RSI: {rsi:.2f}")
+            st.write(f"MA20: {ma20:.4f} | MA50: {ma50:.4f} | RSI: {rsi:.2f}")
 
-        st.line_chart(data[['Close', 'MA20', 'MA50']].dropna())
-    else:
-        data_load_state.text("Failed to load data.")
-
-else:
-    crypto = st.selectbox("Select Cryptocurrency", list(crypto_map.values()))
-    coingecko_id = None
-    for k, v in crypto_map.items():
-        if v == crypto:
-            coingecko_id = k
-            break
-
-    price = fetch_crypto_price(coingecko_id)
-    if price is not None:
-        st.subheader(f"Latest price for {crypto}: ${price:.4f}")
-        st.write("Signals for crypto are based on price momentum (demo).")
-
-        @st.cache_data(ttl=600)
-        def fetch_crypto_historical(coin_id, days=30):
-            url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart?vs_currency=usd&days={days}&interval=daily"
-            r = requests.get(url)
-            r.raise_for_status()
-            prices = r.json()['prices']
-            df = pd.DataFrame(prices, columns=['timestamp', 'price'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            df.set_index('timestamp', inplace=True)
-            return df
-
-        hist = fetch_crypto_historical(coingecko_id)
-        hist['MA10'] = hist['price'].rolling(window=10).mean()
-        hist['MA20'] = hist['price'].rolling(window=20).mean()
-
-        if len(hist) >= 2 and not hist[['MA10', 'MA20']].isna().any().any():
-            last = hist.iloc[-1]
-            prev = hist.iloc[-2]
-            signal = "Hold"
-            if prev['MA10'] < prev['MA20'] and last['MA10'] > last['MA20']:
-                signal = "Buy"
-            elif prev['MA10'] > prev['MA20'] and last['MA10'] < last['MA20']:
-                signal = "Sell"
-            st.write(f"Signal based on MA crossover: **{signal}**")
+        # Prepare columns for plotting safely
+        plot_cols = [price_col, 'MA20', 'MA50']
+        if all(col in data.columns or col in ['MA20', 'MA50'] for col in plot_cols):
+            # Ensure MAs are in data for plotting
+            data_plot = data[[price_col]].copy()
+            data_plot['MA20'] = data[price_col].rolling(window=20).mean()
+            data_plot['MA50'] = data[price_col].rolling(window=50).mean()
+            st.line_chart(data_plot.dropna())
         else:
-            st.write("Insufficient data to generate signal.")
-
-        st.line_chart(hist[['price', 'MA10', 'MA20']])
-
-st.markdown("---")
-st.write("Data sources: Yahoo Finance (stocks, commodities, FX), CoinGecko (crypto).")
+            st.warning("Insufficient data columns for chart plotting.")

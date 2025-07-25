@@ -27,13 +27,13 @@ def get_data(ticker):
 try:
     df = get_data(ticker)
 
-    # === INDICATORS ===
-    df["RSI"] = ta.momentum.RSIIndicator(df["Close"]).rsi().squeeze()
-    df["SMA_20"] = ta.trend.SMAIndicator(df["Close"], window=20).sma_indicator().squeeze()
-    macd = ta.trend.MACD(df["Close"])
-    df["MACD"] = macd.macd().squeeze()
-    df["MACD_Signal"] = macd.macd_signal().squeeze()
-
+    
+# === INDICATORS ===
+df["RSI"] = ta.momentum.RSIIndicator(df["Close"]).rsi()
+df["SMA_20"] = ta.trend.SMAIndicator(df["Close"], window=20).sma_indicator()
+macd = ta.trend.MACD(df["Close"])
+df["MACD"] = macd.macd()
+df["MACD_Signal"] = macd.macd_signal()
     latest = df.iloc[-1]
 
     # === SIGNAL LOGIC ===

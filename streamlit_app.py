@@ -9,7 +9,6 @@ st.set_page_config(page_title="Multi-Market Signal Scout", layout="wide")
 # --- Utility Functions ---
 
 def fetch_yahoo_data(ticker, period='1mo', interval='5m'):
-    """Fetch historical data from Yahoo Finance."""
     try:
         data = yf.download(ticker, period=period, interval=interval, progress=False)
         if data.empty:
@@ -20,7 +19,6 @@ def fetch_yahoo_data(ticker, period='1mo', interval='5m'):
         return None
 
 def fetch_crypto_price(symbol):
-    """Fetch current price for a crypto from CoinGecko API."""
     url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=usd"
     try:
         r = requests.get(url)
@@ -53,7 +51,6 @@ def generate_signals(data):
 
     signal = "Hold"
 
-    # Need at least 2 rows to compare previous and last values
     if len(data) < 2:
         return signal, np.nan, np.nan, np.nan, np.nan
 
@@ -64,7 +61,6 @@ def generate_signals(data):
     last_rsi = data['RSI'].iloc[-1]
     last_close = data['Close'].iloc[-1]
 
-    # Skip signal logic if any relevant value is NaN
     if not any(pd.isna([prev_ma20, prev_ma50, last_ma20, last_ma50])):
         if prev_ma20 < prev_ma50 and last_ma20 > last_ma50:
             signal = "Buy"
@@ -82,9 +78,9 @@ def generate_signals(data):
 # --- Asset Lists ---
 
 stock_symbols = ['AAPL', 'MSFT', 'TSLA', 'GOOGL', 'AMZN']
-commodity_symbols = ['GC=F', 'CL=F', 'SI=F']  # Gold, Crude Oil, Silver futures Yahoo tickers
-currency_pairs = ['EURUSD=X', 'JPY=X', 'GBPUSD=X']  # Yahoo FX pairs
-crypto_map = {  # CoinGecko IDs to symbols
+commodity_symbols = ['GC=F', 'CL=F', 'SI=F']
+currency_pairs = ['EURUSD=X', 'JPY=X', 'GBPUSD=X']
+crypto_map = {
     'bitcoin': 'BTC',
     'ethereum': 'ETH',
     'ripple': 'XRP',
@@ -111,7 +107,10 @@ if market != 'Cryptocurrency':
         signal, price, ma20, ma50, rsi = generate_signals(data)
         data_load_state.text("Data loaded.")
 
-        # Defensive conversion to scalar float for price
+        # FIX: Add MA columns to original DataFrame before plotting
+        data['MA20'] = data['Close'].rolling(window=20).mean()
+        data['MA50'] = data['Close'].rolling(window=50).mean()
+
         try:
             price = float(price)
         except Exception:
@@ -131,7 +130,6 @@ if market != 'Cryptocurrency':
         data_load_state.text("Failed to load data.")
 
 else:
-    # Crypto
     crypto = st.selectbox("Select Cryptocurrency", list(crypto_map.values()))
     coingecko_id = None
     for k, v in crypto_map.items():

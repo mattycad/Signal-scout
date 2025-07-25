@@ -2,11 +2,12 @@ import streamlit as st
 import yfinance as yf
 import ta
 
-st.set_page_config(page_title="📈 Signal Scout UK", layout="centered")
-st.title("📈 Signal Scout UK")
-st.write("Analyze real-time UK stocks, crypto, and commodities with Buy/Sell/Hold signals.")
+st.set_page_config(page_title="📈 Signal Scout Global", layout="centered")
+st.title("📈 Signal Scout Global")
+st.write("Analyze real-time global stocks, crypto, commodities, and currencies with Buy/Sell/Hold signals.")
 
 assets = {
+    # UK Stocks
     "AstraZeneca (AZN)": "AZN.L",
     "HSBC Holdings (HSBA)": "HSBA.L",
     "Shell (SHEL)": "SHEL.L",
@@ -17,14 +18,75 @@ assets = {
     "GlaxoSmithKline (GSK)": "GSK.L",
     "Barclays (BARC)": "BARC.L",
     "Rolls-Royce (RR)": "RR.L",
+
+    # US Stocks
+    "Apple (AAPL)": "AAPL",
+    "Microsoft (MSFT)": "MSFT",
+    "Amazon (AMZN)": "AMZN",
+    "Alphabet (GOOGL)": "GOOGL",
+    "Tesla (TSLA)": "TSLA",
+    "NVIDIA (NVDA)": "NVDA",
+    "JPMorgan Chase (JPM)": "JPM",
+    "Johnson & Johnson (JNJ)": "JNJ",
+    "Visa (V)": "V",
+    "Walmart (WMT)": "WMT",
+
+    # European Stocks
+    "SAP (SAP)": "SAP.DE",
+    "Siemens (SIE)": "SIE.DE",
+    "LVMH (MC)": "MC.PA",
+    "TotalEnergies (TTE)": "TTE.PA",
+    "Nestlé (NESN)": "NESN.SW",
+    "Roche (ROG)": "ROG.SW",
+    "ASML (ASML)": "ASML",
+
+    # Cryptocurrencies
     "Bitcoin (BTC)": "BTC-USD",
     "Ethereum (ETH)": "ETH-USD",
+    "Cardano (ADA)": "ADA-USD",
+    "Solana (SOL)": "SOL-USD",
+    "Polygon (MATIC)": "MATIC-USD",
+    "Polkadot (DOT)": "DOT-USD",
+    "Ripple (XRP)": "XRP-USD",
+    "Dogecoin (DOGE)": "DOGE-USD",
+    "Litecoin (LTC)": "LTC-USD",
+    "Chainlink (LINK)": "LINK-USD",
+    "Stellar (XLM)": "XLM-USD",
+    "VeChain (VET)": "VET-USD",
+    "Tron (TRX)": "TRX-USD",
+    "EOS (EOS)": "EOS-USD",
+    "Monero (XMR)": "XMR-USD",
+    "Bitcoin Cash (BCH)": "BCH-USD",
+
+    # Commodities
     "Gold (GC=F)": "GC=F",
     "Silver (SI=F)": "SI=F",
+    "Platinum (PL=F)": "PL=F",
+    "Palladium (PA=F)": "PA=F",
     "Crude Oil WTI (CL=F)": "CL=F",
+    "Brent Crude (BZ=F)": "BZ=F",
+    "Natural Gas (NG=F)": "NG=F",
+    "Copper (HG=F)": "HG=F",
+    "Corn (ZC=F)": "ZC=F",
+    "Soybeans (ZS=F)": "ZS=F",
+    "Wheat (ZW=F)": "ZW=F",
+    "Sugar (SB=F)": "SB=F",
+    "Coffee (KC=F)": "KC=F",
+
+    # Currencies (Forex pairs)
+    "EUR/USD": "EURUSD=X",
+    "GBP/USD": "GBPUSD=X",
+    "USD/JPY": "JPY=X",
+    "USD/CHF": "CHF=X",
+    "AUD/USD": "AUDUSD=X",
+    "USD/CAD": "CAD=X",
+    "NZD/USD": "NZDUSD=X",
+    "EUR/GBP": "EURGBP=X",
+    "EUR/JPY": "EURJPY=X",
+    "GBP/JPY": "GBPJPY=X"
 }
 
-selected_asset = st.selectbox("Choose a stock, crypto, or commodity:", list(assets.keys()))
+selected_asset = st.selectbox("Choose a stock, crypto, commodity, or currency:", list(assets.keys()))
 ticker = assets[selected_asset]
 
 logic_mode = st.selectbox("Select Logic Mode", ["Simple", "Combined"])
@@ -38,7 +100,7 @@ def get_data(ticker):
 def calculate_signal(df, logic_mode):
     close = df["Close"].squeeze()
     if close.ndim != 1:
-        close = close.iloc[:,0]
+        close = close.iloc[:, 0]
 
     rsi = ta.momentum.RSIIndicator(close).rsi()
     sma20 = ta.trend.SMAIndicator(close, window=20).sma_indicator()
@@ -48,10 +110,10 @@ def calculate_signal(df, logic_mode):
 
     latest = df.iloc[-1]
 
-    rsi_val = float(latest["RSI"]) if "RSI" in df.columns else float(rsi.iloc[-1])
-    sma_val = float(latest["SMA_20"]) if "SMA_20" in df.columns else float(sma20.iloc[-1])
-    macd_val = float(latest["MACD"]) if "MACD" in df.columns else float(macd.iloc[-1])
-    macd_signal_val = float(latest["MACD_Signal"]) if "MACD_Signal" in df.columns else float(macd_signal.iloc[-1])
+    rsi_val = float(rsi.iloc[-1])
+    sma_val = float(sma20.iloc[-1])
+    macd_val = float(macd.iloc[-1])
+    macd_signal_val = float(macd_signal.iloc[-1])
     close_val = float(latest["Close"])
 
     signal = "HOLD"
@@ -75,13 +137,12 @@ def calculate_signal(df, logic_mode):
     return signal, reason, rsi_val, sma_val, macd_val, macd_signal_val, close_val
 
 try:
-    # Analyze selected asset
     df = get_data(ticker)
     signal, reason, rsi_val, sma_val, macd_val, macd_signal_val, close_val = calculate_signal(df, logic_mode)
 
     st.markdown("---")
     st.subheader(f"📊 {selected_asset} Technical Summary")
-    st.metric("Latest Price", f"${close_val:.2f}")
+    st.metric("Latest Price", f"${close_val:.4f}" if "Currency" in selected_asset or "/" in selected_asset else f"${close_val:.2f}")
     st.write(f"📉 RSI: **{rsi_val:.2f}**")
     st.write(f"📈 SMA (20): **{sma_val:.2f}**")
     st.write(f"📊 MACD: **{macd_val:.2f}** | Signal: **{macd_signal_val:.2f}**")
@@ -91,7 +152,6 @@ try:
     if reason:
         st.caption(f"📌 Reason: {reason}")
 
-    # Scan all assets for BUY and SELL signals
     st.markdown("---")
     st.subheader("🚀 Best Assets to Buy Now")
 
@@ -106,7 +166,7 @@ try:
             elif sig == "SELL":
                 best_sells.append((name, price))
         except Exception:
-            continue  # skip if data fails
+            continue
 
     if best_buys:
         for asset_name, price in best_buys:

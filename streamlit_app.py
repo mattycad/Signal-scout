@@ -15,8 +15,14 @@ def generate_signals(df):
     delta = data['Close'].diff()
     gain = np.where(delta > 0, delta, 0)
     loss = np.where(delta < 0, -delta, 0)
-    avg_gain = pd.Series(gain).rolling(window=14).mean()
-    avg_loss = pd.Series(loss).rolling(window=14).mean()
+
+    # Ensure gain and loss are 1D Series with correct index
+    gain = pd.Series(gain, index=data.index)
+    loss = pd.Series(loss, index=data.index)
+
+    avg_gain = gain.rolling(window=14).mean()
+    avg_loss = loss.rolling(window=14).mean()
+
     rs = avg_gain / avg_loss
     data['RSI'] = 100 - (100 / (1 + rs))
 
@@ -41,7 +47,7 @@ def generate_signals(df):
     return signal, price, ma20, ma50, rsi, data
 
 # --- Sidebar Market Selector ---
-st.title("Multi-Market Real-Time Signal Scout")
+st.title("📊 Multi-Market Real-Time Signal Scout")
 market_type = st.sidebar.selectbox("Select Market Type", ["Stocks", "Crypto", "Commodities", "Currencies"])
 
 # --- Symbol Pickers ---
@@ -66,18 +72,19 @@ if symbol:
         if data.empty or 'Close' not in data.columns:
             st.error("Failed to load valid market data.")
         else:
-            st.success("Data loaded.")
+            st.success("✅ Data loaded.")
             signal, price, ma20, ma50, rsi, full_data = generate_signals(data)
 
-            st.subheader(f"Latest price for {symbol}: ${price:.2f}" if not pd.isna(price) else f"Price data unavailable for {symbol}")
-            st.markdown(f"**Signal:** `{signal}`\n\nMA20: `{ma20:.2f}` | MA50: `{ma50:.2f}` | RSI: `{rsi:.2f}`")
+            st.subheader(f"Latest price for `{symbol}`: ${price:.2f}" if not pd.isna(price) else f"Price data unavailable for {symbol}")
+            st.markdown(f"### 🔔 Signal: `{signal}`")
+            st.markdown(f"**MA20**: `{ma20:.2f}` | **MA50**: `{ma50:.2f}` | **RSI**: `{rsi:.2f}`")
 
             # --- Chart Rendering ---
             if 'Close' in full_data.columns:
                 plot_df = pd.DataFrame()
                 plot_df['Price'] = full_data['Close']
-                plot_df['MA20'] = full_data['Close'].rolling(window=20).mean()
-                plot_df['MA50'] = full_data['Close'].rolling(window=50).mean()
+                plot_df['MA20'] = full_data['MA20']
+                plot_df['MA50'] = full_data['MA50']
                 plot_df = plot_df.dropna()
 
                 if not plot_df.empty:

@@ -7,13 +7,34 @@ st.set_page_config(page_title="📈 Signal Scout Global", layout="centered")
 st.title("📈 Signal Scout Global")
 st.write("Analyze real-time global stocks, crypto, commodities, and currencies with Buy/Sell/Hold signals.")
 
+# Expanded asset list
 assets = {
+    # US Stocks
     "Apple (AAPL)": "AAPL",
     "Microsoft (MSFT)": "MSFT",
+    "Amazon (AMZN)": "AMZN",
+    "Tesla (TSLA)": "TSLA",
+    "NVIDIA (NVDA)": "NVDA",
+    "Meta (META)": "META",
+
+    # Crypto
     "Bitcoin (BTC)": "BTC-USD",
     "Ethereum (ETH)": "ETH-USD",
+    "Solana (SOL)": "SOL-USD",
+    "Cardano (ADA)": "ADA-USD",
+    "Ripple (XRP)": "XRP-USD",
+
+    # Commodities
     "Gold (GC=F)": "GC=F",
-    "EUR/USD": "EURUSD=X"
+    "Silver (SI=F)": "SI=F",
+    "Crude Oil WTI (CL=F)": "CL=F",
+    "Brent Crude (BZ=F)": "BZ=F",
+    "Natural Gas (NG=F)": "NG=F",
+
+    # Forex
+    "EUR/USD": "EURUSD=X",
+    "GBP/USD": "GBPUSD=X",
+    "USD/JPY": "JPY=X"
 }
 
 selected_asset = st.selectbox("Choose a stock, crypto, commodity, or currency:", list(assets.keys()))
@@ -27,7 +48,9 @@ def get_data(ticker):
     return df
 
 def calculate_signal(df, logic_mode):
-    close = df["Close"].squeeze()  # ✅ Ensure Series, not 2D DataFrame
+    close = df["Close"]
+    if isinstance(close, (pd.DataFrame)) and close.shape[1] == 1:
+        close = close.squeeze()  # Ensure Series
 
     rsi = ta.momentum.RSIIndicator(close).rsi()
     sma = ta.trend.SMAIndicator(close, window=20).sma_indicator()
@@ -86,7 +109,7 @@ try:
     if reason:
         st.caption(f"📌 Reason: {reason}")
 
-    # Native chart
+    # Native Streamlit chart
     df_chart = df[["Close"]].copy()
     df_chart["SMA 20"] = ta.trend.SMAIndicator(df["Close"], window=20).sma_indicator()
     st.line_chart(df_chart)
@@ -104,12 +127,11 @@ def scan_asset(name, sym):
         sig, _, _, _, _, _, price = calculate_signal(data, logic_mode)
         return (name, sig, price)
     except:
-        return None  # ✅ Prevent crash on bad data
+        return None
 
 with concurrent.futures.ThreadPoolExecutor() as executor:
     raw_results = list(executor.map(lambda item: scan_asset(*item), assets.items()))
 
-# ✅ Filter out None values to avoid unpack errors
 results = [res for res in raw_results if res is not None]
 
 best_buys = [(name, price) for name, sig, price in results if sig == "BUY"]
@@ -124,6 +146,7 @@ def detect_alerts(new_assets, prev_assets, label):
             st.success(f"🔔 New {label} Signal: **{item}**")
     return list(new_set)
 
+# --- Display BUY Signals ---
 st.markdown("---")
 st.subheader("🚀 Best Assets to Buy Now")
 if best_buys:
@@ -133,6 +156,7 @@ if best_buys:
 else:
     st.write("No BUY signals found right now.")
 
+# --- Display SELL Signals ---
 st.markdown("---")
 st.subheader("⚠️ Best Assets to Sell Now")
 if best_sells:

@@ -27,7 +27,8 @@ def get_data(ticker):
     return df
 
 def calculate_signal(df, logic_mode):
-    close = df["Close"]
+    close = df["Close"].squeeze()  # ✅ Ensure Series, not 2D DataFrame
+
     rsi = ta.momentum.RSIIndicator(close).rsi()
     sma = ta.trend.SMAIndicator(close, window=20).sma_indicator()
     macd_obj = ta.trend.MACD(close)
@@ -65,6 +66,7 @@ if "prev_buy_assets" not in st.session_state:
 if "prev_sell_assets" not in st.session_state:
     st.session_state.prev_sell_assets = []
 
+# --- Selected Asset Analysis ---
 try:
     df = get_data(ticker)
     signal, reason, rsi_val, sma_val, macd_val, macd_signal_val, close_val = calculate_signal(df, logic_mode)
@@ -92,6 +94,7 @@ try:
 except Exception as e:
     st.error(f"❌ Failed to analyze selected asset: {e}")
 
+# --- Bulk Scan Section ---
 st.markdown("---")
 st.subheader("📈 Scanning All Assets for Signals...")
 
@@ -99,15 +102,18 @@ def scan_asset(name, sym):
     try:
         data = get_data(sym)
         sig, _, _, _, _, _, price = calculate_signal(data, logic_mode)
-        return name, sig, price
+        return (name, sig, price)
     except:
-        return None
+        return None  # ✅ Prevent crash on bad data
 
 with concurrent.futures.ThreadPoolExecutor() as executor:
-    results = list(executor.map(lambda item: scan_asset(*item), assets.items()))
+    raw_results = list(executor.map(lambda item: scan_asset(*item), assets.items()))
 
-best_buys = [(name, price) for name, sig, price in results if sig == "BUY"] if results else []
-best_sells = [(name, price) for name, sig, price in results if sig == "SELL"] if results else []
+# ✅ Filter out None values to avoid unpack errors
+results = [res for res in raw_results if res is not None]
+
+best_buys = [(name, price) for name, sig, price in results if sig == "BUY"]
+best_sells = [(name, price) for name, sig, price in results if sig == "SELL"]
 
 def detect_alerts(new_assets, prev_assets, label):
     new_set = set(a[0] for a in new_assets)

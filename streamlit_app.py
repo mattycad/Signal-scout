@@ -51,17 +51,15 @@ def generate_signals(data):
     data['MA50'] = moving_average(data, 50)
     data['RSI'] = RSI(data['Close'], 14)
 
-    last_idx = data.index[-1]
-    prev_idx = data.index[-2]
-
     signal = "Hold"
 
-    prev_ma20 = data.at[prev_idx, 'MA20']
-    prev_ma50 = data.at[prev_idx, 'MA50']
-    last_ma20 = data.at[last_idx, 'MA20']
-    last_ma50 = data.at[last_idx, 'MA50']
-    last_rsi = data.at[last_idx, 'RSI']
-    last_close = data.at[last_idx, 'Close']
+    # Use positional indexing to get scalar values
+    prev_ma20 = data['MA20'].iloc[-2]
+    prev_ma50 = data['MA50'].iloc[-2]
+    last_ma20 = data['MA20'].iloc[-1]
+    last_ma50 = data['MA50'].iloc[-1]
+    last_rsi = data['RSI'].iloc[-1]
+    last_close = data['Close'].iloc[-1]
 
     # Check for NaN values
     if not any(pd.isna([prev_ma20, prev_ma50, last_ma20, last_ma50])):

@@ -75,4 +75,69 @@ try:
     else:  # Combined
         if latest["RSI"] < 30 and latest["Close"] > latest["SMA_20"] and latest["MACD"] > latest["MACD_Signal"]:
             signal = "BUY"
-            reason = "RSI < 30 + Price > SMA + MAC
+            reason = "RSI < 30 + Price > SMA + MACD crossover"
+        elif latest["RSI"] > 70 and latest["Close"] < latest["SMA_20"] and latest["MACD"] < latest["MACD_Signal"]:
+            signal = "SELL"
+            reason = "RSI > 70 + Price < SMA + MACD cross down"
+
+    # === METRICS ===
+    st.markdown("---")
+    st.subheader(f"📊 {selected_asset} Technical Summary")
+    st.metric("Latest Price", f"${latest['Close']:.2f}")
+    st.write(f"📉 RSI: **{latest['RSI']:.2f}**")
+    st.write(f"📈 SMA (20): **{latest['SMA_20']:.2f}**")
+    st.write(f"📊 MACD: **{latest['MACD']:.2f}** | Signal: **{latest['MACD_Signal']:.2f}**")
+
+    st.markdown("---")
+    color = {"BUY": "🟢", "SELL": "🔴", "HOLD": "🟡"}
+    st.markdown(f"### Signal: {color[signal]} **{signal}**")
+    if reason:
+        st.caption(f"📌 Reason: {reason}")
+
+    # === PLOTLY CANDLESTICK CHART ===
+    st.markdown("### 📈 Price Chart (Last 3 Months)")
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Candlestick(
+        x=df.index,
+        open=df["Open"],
+        high=df["High"],
+        low=df["Low"],
+        close=df["Close"],
+        name="Price"
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=df.index,
+        y=df["SMA_20"],
+        mode='lines',
+        line=dict(color='orange', width=1.5),
+        name='SMA 20'
+    ))
+
+    fig.update_layout(
+        xaxis_rangeslider_visible=False,
+        template="plotly_white",
+        height=400,
+        margin=dict(l=0, r=0, t=30, b=0),
+        title=f"{selected_asset} Candlestick Chart"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # === RSI CHART ===
+    with st.expander("📉 Show RSI Chart"):
+        rsi_fig = go.Figure()
+        rsi_fig.add_trace(go.Scatter(
+            x=df.index,
+            y=df["RSI"],
+            mode='lines',
+            line=dict(color='purple'),
+            name='RSI'
+        ))
+        rsi_fig.update_layout(height=300, title="RSI (Relative Strength Index)", yaxis=dict(range=[0, 100]))
+        st.plotly_chart(rsi_fig, use_container_width=True)
+
+except Exception as e:
+    st.error(f"❌ Something went wrong while analyzing data: {e}")

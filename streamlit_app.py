@@ -10,14 +10,12 @@ st.write("Analyze global S&P 500 stocks (500+), crypto, commodities, forex wit
 
 @st.cache_data(ttl=86400)
 def load_sp500_symbols():
-    url = "https://datahub.io/core/s-and-p-500-companies/r/constituents.csv"
-    df = pd.read_csv(url)
-    # Confirm columns exist
-    required_cols = {'Symbol', 'Name'}
-    if not required_cols.issubset(df.columns):
-        raise ValueError(f"CSV missing columns {required_cols - set(df.columns)}")
-    # Append .US suffix for yfinance tickers
-    return dict(zip(df['Symbol'] + " (" + df['Name'] + ")", df['Symbol'] + ".US"))
+    # Use stable Wikipedia source
+    url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+    df = pd.read_html(url)[0]
+    if 'Symbol' not in df.columns or 'Security' not in df.columns:
+        raise ValueError("Missing expected columns in S&P 500 table.")
+    return dict(zip(df['Symbol'] + " (" + df['Security'] + ")", df['Symbol'] + ".US"))
 
 sp500_assets = load_sp500_symbols()
 
@@ -39,7 +37,7 @@ selected_asset = st.selectbox("Choose an asset:", list(assets.keys()))
 ticker = assets[selected_asset]
 logic_mode = st.selectbox("Logic Mode:", ["Simple", "Combined"])
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def get_data(ticker):
     df = yf.download(ticker, period="3mo", interval="1d", progress=False)
     df.dropna(inplace=True)
@@ -48,7 +46,7 @@ def get_data(ticker):
 def calculate_signal(df, logic_mode):
     close = df['Close'].squeeze()
     rsi = ta.momentum.RSIIndicator(close).rsi()
-    sma = ta.trend.SMAIndicator(close,20).sma_indicator()
+    sma = ta.trend.SMAIndicator(close, 20).sma_indicator()
     macd = ta.trend.MACD(close)
     macd_line = macd.macd()
     macd_signal = macd.macd_signal()
@@ -72,13 +70,12 @@ def calculate_signal(df, logic_mode):
 
     return signal, reason, vals['rsi'], vals['sma'], vals['macd'], vals['macd_signal'], close_val
 
-# Persistent previous buy/sell signals for notifications
 if 'prev_buy' not in st.session_state:
     st.session_state.prev_buy = []
 if 'prev_sell' not in st.session_state:
     st.session_state.prev_sell = []
 
-# Selected asset detail view
+# --- Show selected asset
 try:
     df = get_data(ticker)
     sig, reason, rsi_val, sma_val, macd_val, macd_sig_val, close_val = calculate_signal(df, logic_mode)
@@ -90,50 +87,53 @@ try:
     col2.metric("RSI", f"{rsi_val:.2f}")
     col3.metric("SMA(20)", f"{sma_val:.2f}")
     st.write(f"MACD: {macd_val:.2f} | Signal: {macd_sig_val:.2f}")
-    color = {"BUY":"🟢","SELL":"🔴","HOLD":"🟡"}[sig]
+    color = {"BUY": "🟢", "SELL": "🔴", "HOLD": "🟡"}[sig]
     st.markdown(f"### Signal: {color} {sig}")
     if reason: st.caption(reason)
 
     dfc = df[['Close']].copy()
     dfc["SMA 20"] = ta.trend.SMAIndicator(df['Close'], 20).sma_indicator()
-    dfc = dfc.dropna()
+    dfc.dropna(inplace=True)
     st.line_chart(dfc)
 
 except Exception as e:
     st.error(f"Failed to analyze selected asset: {e}")
 
-# Bulk scan all assets concurrently
+# --- Bulk scan all assets
 def scan(name, sym):
     try:
-        data = get_data(sym)
-        signal, _, _, _, _, _, price = calculate_signal(data, logic_mode)
-        return (name, signal, price)
-    except Exception:
+        d = get_data(sym)
+        s, _, _, _, _, _, p = calculate_signal(d, logic_mode)
+        return (name, s, p)
+    except:
         return None
 
 st.markdown("---")
 st.subheader("📈 Scanning All Assets")
 
-with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-    raw_results = list(executor.map(lambda item: scan(*item), assets.items()))
-
-results = [r for r in raw_results if r]
+with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+    raw = list(ex.map(lambda item: scan(*item), assets.items()))
+results = [r for r in raw if r]
 
 buys = [(n, p) for n, s, p in results if s == "BUY"]
 sells = [(n, p) for n, s, p in results if s == "SELL"]
 
-def detect(new_list, prev_list, label):
-    new_names = set(n for n, _ in new_list)
-    old_names = set(prev_list)
+def detect_changes(new, old, label):
+    new_names = set(n for n, _ in new)
+    old_names = set(old)
     added = new_names - old_names
-    if added:
-        for asset_name in added:
-            st.success(f"🔔 New {label}: {asset_name}")
+    removed = old_names - new_names
+
+    for a in added:
+        st.success(f"🔔 New {label}: {a}")
+    for r in removed:
+        st.warning(f"💡 Consider Closing: {r} is no longer a {label}")
+
     return list(new_names)
 
 st.write("🚀 Buys:")
 if buys:
-    st.session_state.prev_buy = detect(buys, st.session_state.prev_buy, "BUY")
+    st.session_state.prev_buy = detect_changes(buys, st.session_state.prev_buy, "BUY")
     for n, p in buys:
         st.write(f"🟢 {n} — ${p:.2f}")
 else:
@@ -141,7 +141,7 @@ else:
 
 st.write("⚠️ Sells:")
 if sells:
-    st.session_state.prev_sell = detect(sells, st.session_state.prev_sell, "SELL")
+    st.session_state.prev_sell = detect_changes(sells, st.session_state.prev_sell, "SELL")
     for n, p in sells:
         st.write(f"🔴 {n} — ${p:.2f}")
 else:

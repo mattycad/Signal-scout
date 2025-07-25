@@ -22,10 +22,13 @@ def get_data(ticker):
 try:
     df = get_data(ticker)
 
+    # Ensure Close column is a 1D Series for ta
+    close_series = df["Close"].squeeze()
+
     # === TECHNICAL INDICATORS ===
-    df["RSI"] = ta.momentum.RSIIndicator(df["Close"]).rsi()
-    df["SMA_20"] = ta.trend.SMAIndicator(df["Close"], window=20).sma_indicator()
-    macd = ta.trend.MACD(df["Close"])
+    df["RSI"] = ta.momentum.RSIIndicator(close_series).rsi()
+    df["SMA_20"] = ta.trend.SMAIndicator(close_series, window=20).sma_indicator()
+    macd = ta.trend.MACD(close_series)
     df["MACD"] = macd.macd()
     df["MACD_Signal"] = macd.macd_signal()
 

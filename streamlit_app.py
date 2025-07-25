@@ -6,12 +6,13 @@ import ta
 # === STREAMLIT SETUP ===
 st.set_page_config(page_title="📈 Signal Scout UK", layout="centered")
 st.title("📈 Signal Scout UK")
-st.write("Analyze real-time UK stocks & crypto and get instant Buy/Sell/Hold signals.")
+st.write("Analyze real-time UK stocks, crypto & commodities and get instant Buy/Sell/Hold signals.")
 
 # === ASSET DROPDOWN ===
 st.subheader("Select an Asset")
 
 assets = {
+    # UK Stocks
     "AstraZeneca (AZN)": "AZN.L",
     "HSBC Holdings (HSBA)": "HSBA.L",
     "Shell (SHEL)": "SHEL.L",
@@ -22,6 +23,7 @@ assets = {
     "GlaxoSmithKline (GSK)": "GSK.L",
     "Barclays (BARC)": "BARC.L",
     "Rolls-Royce (RR)": "RR.L",
+    # Cryptocurrencies
     "Bitcoin (BTC)": "BTC-USD",
     "Ethereum (ETH)": "ETH-USD",
     "Cardano (ADA)": "ADA-USD",
@@ -31,10 +33,21 @@ assets = {
     "Ripple (XRP)": "XRP-USD",
     "Dogecoin (DOGE)": "DOGE-USD",
     "Litecoin (LTC)": "LTC-USD",
-    "Chainlink (LINK)": "LINK-USD"
+    "Chainlink (LINK)": "LINK-USD",
+    # Commodities
+    "Gold (GC=F)": "GC=F",
+    "Silver (SI=F)": "SI=F",
+    "Crude Oil WTI (CL=F)": "CL=F",
+    "Natural Gas (NG=F)": "NG=F",
+    "Copper (HG=F)": "HG=F",
+    "Platinum (PL=F)": "PL=F",
+    "Palladium (PA=F)": "PA=F",
+    "Corn (ZC=F)": "ZC=F",
+    "Soybean (ZS=F)": "ZS=F",
+    "Wheat (ZW=F)": "ZW=F",
 }
 
-selected_asset = st.selectbox("Choose a stock or crypto:", list(assets.keys()))
+selected_asset = st.selectbox("Choose a stock, crypto, or commodity:", list(assets.keys()))
 ticker = assets[selected_asset]
 
 logic_mode = st.selectbox("Select Logic Mode", ["Simple", "Combined"])
@@ -49,12 +62,13 @@ def get_data(ticker):
 try:
     df = get_data(ticker)
 
-    # === TECHNICAL INDICATORS - fixed for 1D data ===
-    df["RSI"] = pd.Series(ta.momentum.RSIIndicator(df["Close"]).rsi().values.flatten(), index=df.index)
-    df["SMA_20"] = pd.Series(ta.trend.SMAIndicator(df["Close"], window=20).sma_indicator().values.flatten(), index=df.index)
+    # === TECHNICAL INDICATORS ===
+    # Fix: ensure these produce 1D series with .squeeze()
+    df["RSI"] = ta.momentum.RSIIndicator(df["Close"]).rsi().squeeze()
+    df["SMA_20"] = ta.trend.SMAIndicator(df["Close"], window=20).sma_indicator().squeeze()
     macd = ta.trend.MACD(df["Close"])
-    df["MACD"] = pd.Series(macd.macd().values.flatten(), index=df.index)
-    df["MACD_Signal"] = pd.Series(macd.macd_signal().values.flatten(), index=df.index)
+    df["MACD"] = macd.macd().squeeze()
+    df["MACD_Signal"] = macd.macd_signal().squeeze()
 
     latest = df.iloc[-1]
 
@@ -77,7 +91,7 @@ try:
             signal = "SELL"
             reason = "RSI > 70 + Price < SMA + MACD cross down"
 
-    # === METRICS ===
+    # === METRICS DISPLAY ===
     st.markdown("---")
     st.subheader(f"📊 {selected_asset} Technical Summary")
     st.metric("Latest Price", f"${latest['Close']:.2f}")
@@ -90,6 +104,14 @@ try:
     st.markdown(f"### Signal: {color[signal]} **{signal}**")
     if reason:
         st.caption(f"📌 Reason: {reason}")
+
+    # === PRICE CHART ===
+    st.markdown("### 📈 Price Chart (Last 3 Months)")
+    st.line_chart(df["Close"])
+
+    # === RSI CHART (in expander) ===
+    with st.expander("📉 Show RSI Chart"):
+        st.line_chart(df["RSI"])
 
 except Exception as e:
     st.error(f"❌ Something went wrong while analyzing data: {e}")

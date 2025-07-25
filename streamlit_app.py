@@ -1,12 +1,14 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import numpy as np
 import ta
 
-st.set_page_config(page_title="📈 Signal Scout UK", layout="centered")
-st.title("📈 Signal Scout UK")
-st.write("Analyze real-time UK stocks, crypto & commodities and get instant Buy/Sell/Hold signals.")
+st.set_page_config(page_title="📈 Signal Scout Global", layout="centered")
+st.title("📈 Signal Scout Global")
+st.write("Analyze real-time stocks, crypto & commodities worldwide with Buy/Sell/Hold signals.")
 
+# Expanded assets dictionary including UK, Global, Crypto, Commodities
 assets = {
     # UK Stocks
     "AstraZeneca (AZN)": "AZN.L",
@@ -19,6 +21,31 @@ assets = {
     "GlaxoSmithKline (GSK)": "GSK.L",
     "Barclays (BARC)": "BARC.L",
     "Rolls-Royce (RR)": "RR.L",
+
+    # US Stocks
+    "Apple (AAPL)": "AAPL",
+    "Microsoft (MSFT)": "MSFT",
+    "Amazon (AMZN)": "AMZN",
+    "Alphabet (GOOGL)": "GOOGL",
+    "Tesla (TSLA)": "TSLA",
+    "Meta Platforms (META)": "META",
+    "NVIDIA (NVDA)": "NVDA",
+    "Johnson & Johnson (JNJ)": "JNJ",
+    "JPMorgan Chase (JPM)": "JPM",
+    "Visa (V)": "V",
+
+    # European Stocks
+    "Siemens (SIE.DE)": "SIE.DE",
+    "SAP (SAP.DE)": "SAP.DE",
+    "Volkswagen (VOW3.DE)": "VOW3.DE",
+    "TotalEnergies (TTE.PA)": "TTE.PA",
+    "L'Oréal (OR.PA)": "OR.PA",
+
+    # Japanese Stocks
+    "Toyota Motor (7203.T)": "7203.T",
+    "Sony Group (6758.T)": "6758.T",
+    "SoftBank Group (9984.T)": "9984.T",
+
     # Cryptocurrencies
     "Bitcoin (BTC)": "BTC-USD",
     "Ethereum (ETH)": "ETH-USD",
@@ -30,6 +57,7 @@ assets = {
     "Dogecoin (DOGE)": "DOGE-USD",
     "Litecoin (LTC)": "LTC-USD",
     "Chainlink (LINK)": "LINK-USD",
+
     # Commodities
     "Gold (GC=F)": "GC=F",
     "Silver (SI=F)": "SI=F",
@@ -52,7 +80,6 @@ logic_mode = st.selectbox("Select Logic Mode", ["Simple", "Combined"])
 def get_data(ticker):
     df = yf.download(ticker, period="3mo", interval="1d", progress=False)
     df.dropna(inplace=True)
-    # Make sure Close is 1D Series, not DataFrame
     if isinstance(df["Close"], pd.DataFrame):
         df["Close"] = df["Close"].iloc[:, 0]
     return df
@@ -60,16 +87,22 @@ def get_data(ticker):
 try:
     df = get_data(ticker)
 
-    # Compute indicators ensuring 1D output
-    close_series = df["Close"]
-    df["RSI"] = ta.momentum.RSIIndicator(close_series).rsi()
-    df["SMA_20"] = ta.trend.SMAIndicator(close_series, window=20).sma_indicator()
-    macd = ta.trend.MACD(close_series)
-    df["MACD"] = macd.macd()
-    df["MACD_Signal"] = macd.macd_signal()
+    close_np = np.array(df["Close"]).flatten()
+    close_series = pd.Series(close_np, index=df.index)
 
-    # Drop NaNs after indicators calculation
+    rsi = ta.momentum.RSIIndicator(close_series).rsi()
+    sma_20 = ta.trend.SMAIndicator(close_series, window=20).sma_indicator()
+    macd_obj = ta.trend.MACD(close_series)
+    macd = macd_obj.macd()
+    macd_signal = macd_obj.macd_signal()
+
+    df["RSI"] = rsi
+    df["SMA_20"] = sma_20
+    df["MACD"] = macd
+    df["MACD_Signal"] = macd_signal
+
     df.dropna(inplace=True)
+
     latest = df.iloc[-1]
 
     signal = "HOLD"

@@ -53,7 +53,10 @@ def generate_signals(data):
 
     signal = "Hold"
 
-    # Use positional indexing to get scalar values
+    # Need at least 2 rows to compare
+    if len(data) < 2:
+        return signal, np.nan, np.nan, np.nan, np.nan
+
     prev_ma20 = data['MA20'].iloc[-2]
     prev_ma50 = data['MA50'].iloc[-2]
     last_ma20 = data['MA20'].iloc[-1]
@@ -61,7 +64,7 @@ def generate_signals(data):
     last_rsi = data['RSI'].iloc[-1]
     last_close = data['Close'].iloc[-1]
 
-    # Check for NaN values
+    # Check for NaNs before decision logic
     if not any(pd.isna([prev_ma20, prev_ma50, last_ma20, last_ma50])):
         if prev_ma20 < prev_ma50 and last_ma20 > last_ma50:
             signal = "Buy"
@@ -108,9 +111,14 @@ if market != 'Cryptocurrency':
         signal, price, ma20, ma50, rsi = generate_signals(data)
         data_load_state.text("Data loaded.")
 
-        st.subheader(f"Latest price for {symbol}: ${price:.2f}")
+        if pd.isna(price):
+            st.subheader(f"Latest price for {symbol}: Data unavailable")
+        else:
+            st.subheader(f"Latest price for {symbol}: ${price:.2f}")
+
         st.write(f"Signal: **{signal}**")
-        st.write(f"MA20: {ma20:.2f} | MA50: {ma50:.2f} | RSI: {rsi:.2f}")
+        if not pd.isna(ma20) and not pd.isna(ma50) and not pd.isna(rsi):
+            st.write(f"MA20: {ma20:.2f} | MA50: {ma50:.2f} | RSI: {rsi:.2f}")
 
         st.line_chart(data[['Close', 'MA20', 'MA50']].dropna())
 
@@ -143,15 +151,16 @@ else:
         hist['MA10'] = hist['price'].rolling(window=10).mean()
         hist['MA20'] = hist['price'].rolling(window=20).mean()
 
-        last = hist.iloc[-1]
-        prev = hist.iloc[-2]
-        signal = "Hold"
-        if prev['MA10'] < prev['MA20'] and last['MA10'] > last['MA20']:
-            signal = "Buy"
-        elif prev['MA10'] > prev['MA20'] and last['MA10'] < last['MA20']:
-            signal = "Sell"
+        if len(hist) >= 2:
+            last = hist.iloc[-1]
+            prev = hist.iloc[-2]
+            signal = "Hold"
+            if prev['MA10'] < prev['MA20'] and last['MA10'] > last['MA20']:
+                signal = "Buy"
+            elif prev['MA10'] > prev['MA20'] and last['MA10'] < last['MA20']:
+                signal = "Sell"
+            st.write(f"Signal based on MA crossover: **{signal}**")
 
-        st.write(f"Signal based on MA crossover: **{signal}**")
         st.line_chart(hist[['price', 'MA10', 'MA20']])
 
 st.markdown("---")

@@ -3,7 +3,6 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import requests
-from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Multi-Market Signal Scout", layout="wide")
 
@@ -47,38 +46,37 @@ def RSI(series, period=14):
 # --- Signal Generation ---
 
 def generate_signals(data):
-    """
-    Signal logic based on:
-    - 20 MA and 50 MA crossover
-    - RSI oversold (<30) and overbought (>70)
-    """
     data = data.copy()
     data['MA20'] = moving_average(data, 20)
     data['MA50'] = moving_average(data, 50)
     data['RSI'] = RSI(data['Close'], 14)
 
-    last = data.iloc[-1]
-    prev = data.iloc[-2]
+    last_idx = data.index[-1]
+    prev_idx = data.index[-2]
 
     signal = "Hold"
 
-    # Check for NaNs before comparison
-    if (
-        not pd.isna(prev['MA20']) and not pd.isna(prev['MA50']) and
-        not pd.isna(last['MA20']) and not pd.isna(last['MA50'])
-    ):
-        if prev['MA20'] < prev['MA50'] and last['MA20'] > last['MA50']:
+    prev_ma20 = data.at[prev_idx, 'MA20']
+    prev_ma50 = data.at[prev_idx, 'MA50']
+    last_ma20 = data.at[last_idx, 'MA20']
+    last_ma50 = data.at[last_idx, 'MA50']
+    last_rsi = data.at[last_idx, 'RSI']
+    last_close = data.at[last_idx, 'Close']
+
+    # Check for NaN values
+    if not any(pd.isna([prev_ma20, prev_ma50, last_ma20, last_ma50])):
+        if prev_ma20 < prev_ma50 and last_ma20 > last_ma50:
             signal = "Buy"
-        elif prev['MA20'] > prev['MA50'] and last['MA20'] < last['MA50']:
+        elif prev_ma20 > prev_ma50 and last_ma20 < last_ma50:
             signal = "Sell"
 
-    if not pd.isna(last['RSI']):
-        if last['RSI'] < 30:
+    if not pd.isna(last_rsi):
+        if last_rsi < 30:
             signal = "Buy"
-        elif last['RSI'] > 70:
+        elif last_rsi > 70:
             signal = "Sell"
 
-    return signal, last['Close'], last['MA20'], last['MA50'], last['RSI']
+    return signal, last_close, last_ma20, last_ma50, last_rsi
 
 # --- Asset Lists ---
 

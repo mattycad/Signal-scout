@@ -3,9 +3,9 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-st.title("Enhanced Market Signal App with Search & Portfolio View")
+st.title("Market Signal App with Asset Dropdown")
 
-# Full asset dictionary
+# Assets dictionary with categories
 assets = {
     "Stocks": [
         "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "ADBE", "CRM", "INTC",
@@ -31,17 +31,24 @@ assets = {
     ]
 }
 
-# Flatten asset list for search
-all_assets = []
-for cat, lst in assets.items():
-    all_assets.extend(lst)
+# Create a flat list of assets with category labels for the dropdown
+dropdown_options = []
+for category, symbols in assets.items():
+    dropdown_options.append(f"--- {category} ---")  # category header
+    dropdown_options.extend(symbols)
 
-# Search box for asset selection
-search_term = st.text_input("Search assets (type ticker or partial):").upper()
+# Remove duplicates or empty strings if any
+dropdown_options = [opt for opt in dropdown_options if opt.strip() != ""]
 
-filtered_assets = [a for a in all_assets if search_term in a] if search_term else all_assets
+# Streamlit selectbox does not support grouping natively,
+# so category headers are shown as disabled options visually by prefix "---"
 
-selected_assets = st.multiselect("Select one or more assets", filtered_assets, default=filtered_assets[:3])
+selected_asset = st.selectbox("Select an asset", dropdown_options)
+
+# If user selects a category header (starts with ---), prompt them to select a real asset
+if selected_asset.startswith("---"):
+    st.info("Please select an actual asset, not a category header.")
+    st.stop()
 
 def compute_rsi(series, period=14):
     delta = series.diff()
@@ -60,58 +67,52 @@ def compute_macd(series, fast=12, slow=26, signal=9):
     signal_line = macd.ewm(span=signal, adjust=False).mean()
     return macd, signal_line
 
-if not selected_assets:
-    st.warning("Please select at least one asset.")
+def safe_fmt(value, digits=2):
+    return f"{value:.{digits}f}" if pd.notna(value) else "N/A"
+
+# Download data for selected asset
+df = yf.download(selected_asset, period="60d", interval="1d")
+
+if df.empty:
+    st.error(f"No data found for {selected_asset}")
     st.stop()
 
-# Download data for all selected assets
-all_data = {}
-for asset in selected_assets:
-    df = yf.download(asset, period="60d", interval="1d")
-    if df.empty:
-        st.error(f"No data found for {asset}")
-        continue
-    all_data[asset] = df
+st.header(f"Analysis for {selected_asset}")
 
-# Show combined normalized price chart
-if all_data:
-    st.header("Normalized Close Prices (for comparison)")
-    norm_close = pd.DataFrame()
-    for asset, df in all_data.items():
-        norm_close[asset] = df["Close"] / df["Close"].iloc[0]
-    st.line_chart(norm_close)
+df["MA7"] = df["Close"].rolling(window=7).mean()
+df["MA21"] = df["Close"].rolling(window=21).mean()
+df["RSI14"] = compute_rsi(df["Close"])
+df["MACD"], df["MACD_Signal"] = compute_macd(df["Close"])
 
-# Show individual asset details & indicators
-for asset, df in all_data.items():
-    st.subheader(f"Analysis for {asset}")
-    df["MA7"] = df["Close"].rolling(window=7).mean()
-    df["MA21"] = df["Close"].rolling(window=21).mean()
-    df["RSI14"] = compute_rsi(df["Close"])
-    df["MACD"], df["MACD_Signal"] = compute_macd(df["Close"])
+latest = df.iloc[-1]
 
-    latest = df.iloc[-1]
+st.write(f"Latest Close: {safe_fmt(latest['Close'])}")
+st.write(f"7-day MA: {safe_fmt(latest['MA7'])}")
+st.write(f"21-day MA: {safe_fmt(latest['MA21'])}")
+st.write(f"RSI(14): {safe_fmt(latest['RSI14'])}")
+st.write(f"MACD: {safe_fmt(latest['MACD'], 4)}")
+st.write(f"MACD Signal: {safe_fmt(latest['MACD_Signal'], 4)}")
 
-    st.write(f"Latest Close: {latest['Close']:.2f}")
-    st.write(f"7-day MA: {latest['MA7']:.2f}")
-    st.write(f"21-day MA: {latest['MA21']:.2f}")
-    st.write(f"RSI(14): {latest['RSI14']:.2f}")
-    st.write(f"MACD: {latest['MACD']:.4f}")
-    st.write(f"MACD Signal: {latest['MACD_Signal']:.4f}")
+# Simple buy/sell logic example:
+buy_signal = (
+    pd.notna(latest['MA7']) and pd.notna(latest['MA21']) and pd.notna(latest['RSI14']) and pd.notna(latest['MACD']) and pd.notna(latest['MACD_Signal'])
+    and (latest['MA7'] > latest['MA21']) and (latest['RSI14'] < 70) and (latest['MACD'] > latest['MACD_Signal'])
+)
+sell_signal = (
+    pd.notna(latest['MA7']) and pd.notna(latest['MA21']) and pd.notna(latest['RSI14']) and pd.notna(latest['MACD']) and pd.notna(latest['MACD_Signal'])
+    and (latest['MA7'] < latest['MA21']) and (latest['RSI14'] > 30) and (latest['MACD'] < latest['MACD_Signal'])
+)
 
-    # Simple buy/sell logic example:
-    buy_signal = (latest['MA7'] > latest['MA21']) and (latest['RSI14'] < 70) and (latest['MACD'] > latest['MACD_Signal'])
-    sell_signal = (latest['MA7'] < latest['MA21']) and (latest['RSI14'] > 30) and (latest['MACD'] < latest['MACD_Signal'])
+if buy_signal:
+    st.success("Signal: BUY")
+elif sell_signal:
+    st.error("Signal: SELL")
+else:
+    st.info("Signal: HOLD")
 
-    if buy_signal:
-        st.success("Signal: BUY")
-    elif sell_signal:
-        st.error("Signal: SELL")
-    else:
-        st.info("Signal: HOLD")
-
-    st.line_chart(df[["Close", "MA7", "MA21"]])
-    st.line_chart(df[["RSI14"]])
-    macd_df = df[["MACD", "MACD_Signal"]].dropna()
-    st.line_chart(macd_df)
+st.line_chart(df[["Close", "MA7", "MA21"]])
+st.line_chart(df[["RSI14"]])
+macd_df = df[["MACD", "MACD_Signal"]].dropna()
+st.line_chart(macd_df)
 
 st.write("**Note:** This app provides simple technical indicator signals and is for educational purposes only.")

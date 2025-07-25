@@ -1,5 +1,6 @@
 import streamlit as st
 import yfinance as yf
+import pandas as pd
 import ta
 import concurrent.futures
 
@@ -7,7 +8,7 @@ st.set_page_config(page_title="📈 Signal Scout Global", layout="centered")
 st.title("📈 Signal Scout Global")
 st.write("Analyze real-time global stocks, crypto, commodities, and currencies with Buy/Sell/Hold signals.")
 
-# Expanded asset list
+# Asset List
 assets = {
     # US Stocks
     "Apple (AAPL)": "AAPL",
@@ -15,14 +16,20 @@ assets = {
     "Amazon (AMZN)": "AMZN",
     "Tesla (TSLA)": "TSLA",
     "NVIDIA (NVDA)": "NVDA",
-    "Meta (META)": "META",
+    "Meta Platforms (META)": "META",
+    "Alphabet (GOOGL)": "GOOGL",
+    "Berkshire Hathaway (BRK-B)": "BRK-B",
+    "Coca-Cola (KO)": "KO",
+    "PepsiCo (PEP)": "PEP",
 
-    # Crypto
+    # Cryptocurrencies
     "Bitcoin (BTC)": "BTC-USD",
     "Ethereum (ETH)": "ETH-USD",
-    "Solana (SOL)": "SOL-USD",
     "Cardano (ADA)": "ADA-USD",
+    "Solana (SOL)": "SOL-USD",
     "Ripple (XRP)": "XRP-USD",
+    "Dogecoin (DOGE)": "DOGE-USD",
+    "Litecoin (LTC)": "LTC-USD",
 
     # Commodities
     "Gold (GC=F)": "GC=F",
@@ -30,11 +37,14 @@ assets = {
     "Crude Oil WTI (CL=F)": "CL=F",
     "Brent Crude (BZ=F)": "BZ=F",
     "Natural Gas (NG=F)": "NG=F",
+    "Copper (HG=F)": "HG=F",
+    "Corn (ZC=F)": "ZC=F",
+    "Soybeans (ZS=F)": "ZS=F",
 
-    # Forex
+    # Currencies
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
-    "USD/JPY": "JPY=X"
+    "USD/JPY": "JPY=X",
 }
 
 selected_asset = st.selectbox("Choose a stock, crypto, commodity, or currency:", list(assets.keys()))
@@ -48,9 +58,7 @@ def get_data(ticker):
     return df
 
 def calculate_signal(df, logic_mode):
-    close = df["Close"]
-    if isinstance(close, (pd.DataFrame)) and close.shape[1] == 1:
-        close = close.squeeze()  # Ensure Series
+    close = df["Close"].squeeze()
 
     rsi = ta.momentum.RSIIndicator(close).rsi()
     sma = ta.trend.SMAIndicator(close, window=20).sma_indicator()
@@ -84,6 +92,7 @@ def calculate_signal(df, logic_mode):
 
     return signal, reason, rsi_val, sma_val, macd_val, macd_signal_val, close_val
 
+# Store previous state for alerts
 if "prev_buy_assets" not in st.session_state:
     st.session_state.prev_buy_assets = []
 if "prev_sell_assets" not in st.session_state:
@@ -101,7 +110,6 @@ try:
     col1.metric("Latest Price", f"${close_val:.2f}")
     col2.metric("RSI", f"{rsi_val:.2f}")
     col3.metric("SMA 20", f"{sma_val:.2f}")
-
     st.write(f"📊 MACD: **{macd_val:.2f}** | Signal Line: **{macd_signal_val:.2f}**")
 
     color = {"BUY": "🟢", "SELL": "🔴", "HOLD": "🟡"}
@@ -109,7 +117,7 @@ try:
     if reason:
         st.caption(f"📌 Reason: {reason}")
 
-    # Native Streamlit chart
+    # Native chart
     df_chart = df[["Close"]].copy()
     df_chart["SMA 20"] = ta.trend.SMAIndicator(df["Close"], window=20).sma_indicator()
     st.line_chart(df_chart)
@@ -133,7 +141,6 @@ with concurrent.futures.ThreadPoolExecutor() as executor:
     raw_results = list(executor.map(lambda item: scan_asset(*item), assets.items()))
 
 results = [res for res in raw_results if res is not None]
-
 best_buys = [(name, price) for name, sig, price in results if sig == "BUY"]
 best_sells = [(name, price) for name, sig, price in results if sig == "SELL"]
 
@@ -146,7 +153,7 @@ def detect_alerts(new_assets, prev_assets, label):
             st.success(f"🔔 New {label} Signal: **{item}**")
     return list(new_set)
 
-# --- Display BUY Signals ---
+# Buy alerts
 st.markdown("---")
 st.subheader("🚀 Best Assets to Buy Now")
 if best_buys:
@@ -156,7 +163,7 @@ if best_buys:
 else:
     st.write("No BUY signals found right now.")
 
-# --- Display SELL Signals ---
+# Sell alerts
 st.markdown("---")
 st.subheader("⚠️ Best Assets to Sell Now")
 if best_sells:

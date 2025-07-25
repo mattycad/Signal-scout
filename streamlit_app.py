@@ -6,16 +6,16 @@ import concurrent.futures
 
 st.set_page_config(page_title="📈 Signal Scout Global", layout="centered")
 st.title("📈 Signal Scout Global")
-st.write("Analyze global S&P 500 stocks (500+), crypto, commodities, forex with Buy/Sell/Hold signals.")
-
+st.write("Analyze global S&P 500 stocks (500+), crypto, commodities, forex with Buy/Sell/Hold 
+         
 @st.cache_data(ttl=86400)
 def load_sp500_symbols():
-    # Use stable Wikipedia source
-    url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-    df = pd.read_html(url)[0]
-    if 'Symbol' not in df.columns or 'Security' not in df.columns:
-        raise ValueError("Missing expected columns in S&P 500 table.")
-    return dict(zip(df['Symbol'] + " (" + df['Security'] + ")", df['Symbol'] + ".US"))
+    url = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.csv"
+    df = pd.read_csv(url)
+    required_cols = {"Symbol", "Name"}
+    if not required_cols.issubset(df.columns):
+        raise ValueError(f"CSV missing required columns: {required_cols - set(df.columns)}")
+    return dict(zip(df['Symbol'] + " (" + df['Name'] + ")", df['Symbol'] + ".US"))
 
 sp500_assets = load_sp500_symbols()
 

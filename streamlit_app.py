@@ -2,7 +2,6 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import ta
-import plotly.graph_objects as go
 
 # === STREAMLIT SETUP ===
 st.set_page_config(page_title="📈 Signal Scout UK", layout="centered")
@@ -23,7 +22,6 @@ assets = {
     "GlaxoSmithKline (GSK)": "GSK.L",
     "Barclays (BARC)": "BARC.L",
     "Rolls-Royce (RR)": "RR.L",
-    "---": "---",
     "Bitcoin (BTC)": "BTC-USD",
     "Ethereum (ETH)": "ETH-USD",
     "Cardano (ADA)": "ADA-USD",
@@ -36,9 +34,8 @@ assets = {
     "Chainlink (LINK)": "LINK-USD"
 }
 
-filtered_assets = {k: v for k, v in assets.items() if v != "---"}
-selected_asset = st.selectbox("Choose a stock or crypto:", list(filtered_assets.keys()))
-ticker = filtered_assets[selected_asset]
+selected_asset = st.selectbox("Choose a stock or crypto:", list(assets.keys()))
+ticker = assets[selected_asset]
 
 logic_mode = st.selectbox("Select Logic Mode", ["Simple", "Combined"])
 
@@ -52,7 +49,7 @@ def get_data(ticker):
 try:
     df = get_data(ticker)
 
-    # === TECHNICAL INDICATORS (Fixed 1D using .squeeze()) ===
+    # === TECHNICAL INDICATORS ===
     df["RSI"] = ta.momentum.RSIIndicator(df["Close"]).rsi().squeeze()
     df["SMA_20"] = ta.trend.SMAIndicator(df["Close"], window=20).sma_indicator().squeeze()
     macd = ta.trend.MACD(df["Close"])
@@ -94,50 +91,13 @@ try:
     if reason:
         st.caption(f"📌 Reason: {reason}")
 
-    # === PLOTLY CANDLESTICK CHART ===
-    st.markdown("### 📈 Price Chart (Last 3 Months)")
+    # === SIMPLE CHARTS ===
+    st.markdown("### 📈 Price & SMA (20) Chart (Last 3 Months)")
+    price_sma_df = df[["Close", "SMA_20"]]
+    st.line_chart(price_sma_df)
 
-    fig = go.Figure()
-
-    fig.add_trace(go.Candlestick(
-        x=df.index,
-        open=df["Open"],
-        high=df["High"],
-        low=df["Low"],
-        close=df["Close"],
-        name="Price"
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=df.index,
-        y=df["SMA_20"],
-        mode='lines',
-        line=dict(color='orange', width=1.5),
-        name='SMA 20'
-    ))
-
-    fig.update_layout(
-        xaxis_rangeslider_visible=False,
-        template="plotly_white",
-        height=400,
-        margin=dict(l=0, r=0, t=30, b=0),
-        title=f"{selected_asset} Candlestick Chart"
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-    # === RSI CHART ===
-    with st.expander("📉 Show RSI Chart"):
-        rsi_fig = go.Figure()
-        rsi_fig.add_trace(go.Scatter(
-            x=df.index,
-            y=df["RSI"],
-            mode='lines',
-            line=dict(color='purple'),
-            name='RSI'
-        ))
-        rsi_fig.update_layout(height=300, title="RSI (Relative Strength Index)", yaxis=dict(range=[0, 100]))
-        st.plotly_chart(rsi_fig, use_container_width=True)
+    st.markdown("### 📉 RSI Chart")
+    st.line_chart(df["RSI"])
 
 except Exception as e:
     st.error(f"❌ Something went wrong while analyzing data: {e}")

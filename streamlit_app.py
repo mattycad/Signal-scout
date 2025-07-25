@@ -1,4 +1,4 @@
-import streamlit as st
+st.write("✅ App started loading...")import streamlit as st
 import yfinance as yf
 import pandas as pd
 import ta

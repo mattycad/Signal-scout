@@ -3,25 +3,19 @@ import yfinance as yf
 import pandas as pd
 import ta
 import concurrent.futures
-import datetime
+from datetime import datetime
 
-st.set_page_config(page_title="📈 Signal Scout: Multi-Asset Alerts", layout="wide")
+st.set_page_config(page_title="📈 Signal Scout: Stocks, Crypto, Commodities & Forex", layout="centered")
 st.title("📈 Signal Scout: Stocks, Crypto, Commodities & Forex")
 st.write("Analyze multiple asset classes with Buy/Sell/Hold signals and alerts on changes.")
 
-ASSETS = {
+# Asset list (add more as you want)
+assets = {
     "Apple (AAPL)": "AAPL",
     "Microsoft (MSFT)": "MSFT",
-    "Tesla (TSLA)": "TSLA",
     "Amazon (AMZN)": "AMZN",
-    "Alphabet (GOOGL)": "GOOGL",
-    "Meta (META)": "META",
+    "Tesla (TSLA)": "TSLA",
     "NVIDIA (NVDA)": "NVDA",
-    "JPMorgan Chase (JPM)": "JPM",
-    "Johnson & Johnson (JNJ)": "JNJ",
-    "Visa (V)": "V",
-    "Walmart (WMT)": "WMT",
-    "Coca-Cola (KO)": "KO",
     "Bitcoin (BTC-USD)": "BTC-USD",
     "Ethereum (ETH-USD)": "ETH-USD",
     "Binance Coin (BNB-USD)": "BNB-USD",
@@ -36,101 +30,107 @@ ASSETS = {
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
     "USD/JPY": "JPY=X",
-    "USD/CHF": "CHF=X",
-    "AUD/USD": "AUDUSD=X",
-    "USD/CAD": "USDCAD=X",
     "NZD/USD": "NZDUSD=X",
+    "USD/CAD": "USDCAD=X",
+    "USD/CHF": "USDCHF=X",
+    "AUD/USD": "AUDUSD=X"
 }
 
-@st.cache_data(ttl=300)
-def fetch_data(ticker):
-    try:
-        df = yf.download(ticker, period="3mo", interval="1d", progress=False)
-        if df.empty or 'Close' not in df.columns:
-            raise ValueError(f"No valid data for ticker {ticker}")
-        df.dropna(inplace=True)
-        return df
-    except Exception as e:
-        st.error(f"Error fetching data for {ticker}: {e}")
-        return pd.DataFrame()  # empty to signal failure
+# Cache data loading for 1 hour
+@st.cache_data(ttl=3600)
+def get_data(ticker):
+    df = yf.download(ticker, period="3mo", interval="1d", progress=False)
+    df.dropna(inplace=True)
+    return df
 
 def compute_signal(df):
-    close = df['Close']
-    if len(close) < 21:
-        return "HOLD", "Insufficient data", None
+    if 'Close' not in df.columns:
+        return "HOLD", "No Close price data", None
 
-    rsi = ta.momentum.RSIIndicator(close).rsi()
-    sma20 = ta.trend.SMAIndicator(close, 20).sma_indicator()
-    macd = ta.trend.MACD(close)
-    macd_line = macd.macd()
-    macd_signal = macd.macd_signal()
+    close = df['Close'].dropna()
+
+    # Check for enough data points
+    if close.empty or len(close) < 21:
+        return "HOLD", "Insufficient Close price data", None
 
     try:
+        rsi = ta.momentum.RSIIndicator(close).rsi()
+        sma20 = ta.trend.SMAIndicator(close, 20).sma_indicator()
+        macd = ta.trend.MACD(close)
+        macd_line = macd.macd()
+        macd_signal = macd.macd_signal()
+
+        # Drop NaNs to get latest valid values
         rsi_val = rsi.dropna().iloc[-1]
         sma_val = sma20.dropna().iloc[-1]
         macd_val = macd_line.dropna().iloc[-1]
         macd_sig_val = macd_signal.dropna().iloc[-1]
         price = close.iloc[-1]
+
+        if rsi_val < 30 and price > sma_val and macd_val > macd_sig_val:
+            return "BUY", "RSI < 30, Price > SMA20, MACD bullish crossover", price
+        elif rsi_val > 70 and price < sma_val and macd_val < macd_sig_val:
+            return "SELL", "RSI > 70, Price < SMA20, MACD bearish crossover", price
+        else:
+            return "HOLD", "No clear signal", price
+
     except Exception as e:
         return "HOLD", f"Indicator calculation error: {e}", None
 
-    if rsi_val < 30 and price > sma_val and macd_val > macd_sig_val:
-        return "BUY", "RSI < 30, Price > SMA20, MACD bullish crossover", price
-    elif rsi_val > 70 and price < sma_val and macd_val < macd_sig_val:
-        return "SELL", "RSI > 70, Price < SMA20, MACD bearish crossover", price
-    else:
-        return "HOLD", "No clear signal", price
+# Session state for alerts
+if 'prev_buy' not in st.session_state:
+    st.session_state.prev_buy = set()
+if 'prev_sell' not in st.session_state:
+    st.session_state.prev_sell = set()
 
-if 'signals' not in st.session_state:
-    st.session_state.signals = {}
+st.subheader("🚀 Asset Signals")
 
-st.header("🚀 Asset Signals")
+def scan_asset(name, ticker):
+    try:
+        df = get_data(ticker)
+        signal, reason, price = compute_signal(df)
+        return (name, signal, reason, price)
+    except Exception as e:
+        return (name, "HOLD", f"Error loading data: {e}", None)
 
-with st.spinner("Fetching data and analyzing..."):
-    results = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        futures = {executor.submit(fetch_data, ticker): name for name, ticker in ASSETS.items()}
-        for future in concurrent.futures.as_completed(futures):
-            name = futures[future]
-            df = future.result()
-            if df.empty:
-                results[name] = {"signal": "HOLD", "reason": "Failed to load data", "price": None}
-            else:
-                signal, reason, price = compute_signal(df)
-                results[name] = {"signal": signal, "reason": reason, "price": price}
+with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    results = list(executor.map(lambda item: scan_asset(*item), assets.items()))
 
-buy_list, sell_list, hold_list = [], [], []
+buys = [(n, r, p) for n, s, r, p in results if s == "BUY"]
+sells = [(n, r, p) for n, s, r, p in results if s == "SELL"]
+holds = [(n, r, p) for n, s, r, p in results if s == "HOLD"]
 
-for asset, info in results.items():
-    sig = info['signal']
-    reason = info['reason']
-    price = info['price']
+def alert_changes(new_list, old_set, label):
+    new_set = set(name for name, _, _ in new_list)
+    added = new_set - old_set
+    removed = old_set - new_set
 
-    prev_sig = st.session_state.signals.get(asset)
-    if prev_sig != sig and prev_sig is not None:
-        st.info(f"🔔 Signal change for **{asset}**: {prev_sig} → {sig}")
+    for name in added:
+        st.success(f"🔔 New {label} Signal: {name}")
+    for name in removed:
+        st.warning(f"💡 Consider Closing: {name} is no longer a {label} signal")
 
-    st.session_state.signals[asset] = sig
+    return new_set
 
-    if sig == "BUY":
-        buy_list.append((asset, price, reason))
-    elif sig == "SELL":
-        sell_list.append((asset, price, reason))
-    else:
-        hold_list.append((asset, price, reason))
+st.write("🟢 Buy Signals:")
+if buys:
+    st.session_state.prev_buy = alert_changes(buys, st.session_state.prev_buy, "BUY")
+    for name, reason, price in buys:
+        st.write(f"🟢 {name} — ${price:.2f} — {reason}")
+else:
+    st.write("No BUY signals.")
 
-def show_assets(title, assets):
-    st.subheader(title)
-    if not assets:
-        st.write("None")
-    else:
-        for name, price, reason in sorted(assets, key=lambda x: x[1] or 0, reverse=True):
-            price_str = f"${price:.2f}" if price else "N/A"
-            st.write(f"- **{name}**: {price_str} — {reason}")
+st.write("🔴 Sell Signals:")
+if sells:
+    st.session_state.prev_sell = alert_changes(sells, st.session_state.prev_sell, "SELL")
+    for name, reason, price in sells:
+        st.write(f"🔴 {name} — ${price:.2f} — {reason}")
+else:
+    st.write("No SELL signals.")
 
-show_assets("🟢 Buy Signals", buy_list)
-show_assets("🔴 Sell Signals", sell_list)
-show_assets("🟡 Hold Signals", hold_list)
+st.write("🟡 Hold Signals:")
+for name, reason, price in holds:
+    price_str = f"${price:.2f}" if price else "N/A"
+    st.write(f"🟡 {name}: {price_str} — {reason}")
 
-st.markdown("---")
-st.caption(f"Last update: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.markdown(f"---\nLast update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

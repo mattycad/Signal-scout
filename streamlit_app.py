@@ -13,10 +13,11 @@ def generate_signals(df):
     data['MA50'] = data['Close'].rolling(window=50).mean()
     
     delta = data['Close'].diff()
-    gain = np.where(delta > 0, delta, 0).flatten()
-    loss = np.where(delta < 0, -delta, 0).flatten()
 
-    # Now these are 1D arrays
+    # Fix ambiguity and shape errors
+    gain = np.where(delta.values > 0, delta.values, 0)
+    loss = np.where(delta.values < 0, -delta.values, 0)
+
     gain = pd.Series(gain, index=data.index)
     loss = pd.Series(loss, index=data.index)
 
@@ -70,7 +71,7 @@ if symbol:
         data = yf.download(symbol, start=start, end=end, interval='1d')
         
         if data.empty or 'Close' not in data.columns:
-            st.error("Failed to load valid market data.")
+            st.error("❌ Failed to load valid market data.")
         else:
             st.success("✅ Data loaded.")
             signal, price, ma20, ma50, rsi, full_data = generate_signals(data)
@@ -90,8 +91,8 @@ if symbol:
                 if not plot_df.empty:
                     st.line_chart(plot_df)
                 else:
-                    st.warning("Not enough data to plot moving averages.")
+                    st.warning("⚠️ Not enough data to plot moving averages.")
             else:
-                st.warning("Close price data missing. Cannot display chart.")
+                st.warning("⚠️ Close price data missing. Cannot display chart.")
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")

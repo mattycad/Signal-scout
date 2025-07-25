@@ -2,14 +2,12 @@ import streamlit as st
 import yfinance as yf
 import ta
 import concurrent.futures
-import plotly.graph_objs as go
 
 st.set_page_config(page_title="📈 Signal Scout Global", layout="centered")
 st.title("📈 Signal Scout Global")
 st.write("Analyze real-time global stocks, crypto, commodities, and currencies with Buy/Sell/Hold signals.")
 
 assets = {
-    # Sample selection for brevity — use full list as before
     "Apple (AAPL)": "AAPL",
     "Microsoft (MSFT)": "MSFT",
     "Bitcoin (BTC)": "BTC-USD",
@@ -62,13 +60,11 @@ def calculate_signal(df, logic_mode):
 
     return signal, reason, rsi_val, sma_val, macd_val, macd_signal_val, close_val
 
-# --- Store state for change alerts ---
 if "prev_buy_assets" not in st.session_state:
     st.session_state.prev_buy_assets = []
 if "prev_sell_assets" not in st.session_state:
     st.session_state.prev_sell_assets = []
 
-# --- Selected Asset Analysis ---
 try:
     df = get_data(ticker)
     signal, reason, rsi_val, sma_val, macd_val, macd_signal_val, close_val = calculate_signal(df, logic_mode)
@@ -88,15 +84,14 @@ try:
     if reason:
         st.caption(f"📌 Reason: {reason}")
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["Close"], name="Close"))
-    fig.add_trace(go.Scatter(x=df.index, y=ta.trend.SMAIndicator(df["Close"], window=20).sma_indicator(), name="SMA(20)"))
-    st.plotly_chart(fig, use_container_width=True)
+    # Native chart
+    df_chart = df[["Close"]].copy()
+    df_chart["SMA 20"] = ta.trend.SMAIndicator(df["Close"], window=20).sma_indicator()
+    st.line_chart(df_chart)
 
 except Exception as e:
     st.error(f"❌ Failed to analyze selected asset: {e}")
 
-# --- Bulk Scan for Best BUY/SELL ---
 st.markdown("---")
 st.subheader("📈 Scanning All Assets for Signals...")
 
@@ -114,7 +109,6 @@ with concurrent.futures.ThreadPoolExecutor() as executor:
 best_buys = [(name, price) for name, sig, price in results if sig == "BUY"] if results else []
 best_sells = [(name, price) for name, sig, price in results if sig == "SELL"] if results else []
 
-# --- Detect and show alerts for new BUY/SELL signals ---
 def detect_alerts(new_assets, prev_assets, label):
     new_set = set(a[0] for a in new_assets)
     old_set = set(prev_assets)

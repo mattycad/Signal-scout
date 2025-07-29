@@ -165,15 +165,26 @@ try:
     st.subheader("🚀 Best Assets to Buy Now")
     best_buys = []
     best_sells = []
+    close_recommendations = []
 
     for name, sym in assets.items():
         try:
             data = get_data(sym)
             sig, _, _, _, _, _, price = calculate_signal(data, logic_mode)
+            prev_sig = st.session_state.signals.get(name)
+
+            # Collect buy/sell
             if sig == "BUY":
                 best_buys.append((name, price))
             elif sig == "SELL":
                 best_sells.append((name, price))
+
+            # Collect close recommendations
+            if prev_sig and ((prev_sig == "BUY" and sig == "SELL") or (prev_sig == "SELL" and sig == "BUY")):
+                close_recommendations.append((name, prev_sig, sig))
+
+            # Update state
+            st.session_state.signals[name] = sig
         except Exception:
             continue
 
@@ -191,7 +202,14 @@ try:
     else:
         st.write("No SELL signals found right now.")
 
+    st.markdown("---")
+    st.subheader("💼 Best Time to Close Positions")
+    if close_recommendations:
+        for asset_name, prev, current in close_recommendations:
+            emoji = "🔁"
+            st.write(f"{emoji} **{asset_name}** — Signal changed from {prev} to {current} → Consider closing your {prev} position.")
+    else:
+        st.write("No close recommendations at the moment.")
+
 except Exception as e:
     st.error(f"❌ Something went wrong while analyzing data: {e}")
-
-

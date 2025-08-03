@@ -2,10 +2,8 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import datetime
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
-import matplotlib.pyplot as plt
 
 # --------- UTILS ---------
 def load_stock(ticker):
@@ -21,10 +19,12 @@ def get_fundamentals(stock):
     }
 
 def get_catalysts(stock):
+    calendar = stock.calendar
+    earnings = calendar.loc['Earnings Date'][0] if 'Earnings Date' in calendar.index else "Unknown"
     return [
-        "Earnings Date: " + str(stock.calendar.loc['Earnings Date'][0]) if 'Earnings Date' in stock.calendar.index else "No earnings info",
-        "Recent News: Check Yahoo Finance",
-        "Sector Shifts: Monitor ETF performance in this sector"
+        f"Earnings Date: {earnings}",
+        "Recent News: Check Yahoo Finance or Benzinga",
+        "Sector Shifts: Watch XLF, XLK, etc. for sector movement"
     ]
 
 def compare_stocks(stock_a, stock_b):
@@ -64,6 +64,7 @@ def swing_trading_signals(data):
     return rsi, macd, sma_50, sma_200
 
 # --------- STREAMLIT UI ---------
+st.set_page_config(page_title="Stock Analyst Pro", layout="wide")
 st.title("📊 Stock Analyst Pro")
 
 menu = st.sidebar.selectbox("Choose Feature", [
@@ -73,9 +74,11 @@ menu = st.sidebar.selectbox("Choose Feature", [
     "4. Analyst Sentiment",
     "5. Risk/Reward (Support/Resistance)",
     "6. Portfolio Tracker",
-    "7. Swing Trading Plan"
+    "7. Swing Trading Plan",
+    "8. AI Trade Recommender"
 ])
 
+# --------- Feature Logic ---------
 if menu == "1. Fundamentals":
     ticker = st.text_input("Enter stock ticker")
     if ticker:
@@ -154,3 +157,37 @@ elif menu == "7. Swing Trading Plan":
         }))
         st.write("📈 RSI < 30: Oversold | RSI > 70: Overbought")
         st.write("📉 MACD crossover can indicate momentum change.")
+
+elif menu == "8. AI Trade Recommender":
+    ticker = st.text_input("Enter stock ticker")
+    if ticker:
+        stock = load_stock(ticker)
+        hist = stock.history(period="6mo")
+        rsi_val = RSIIndicator(hist['Close']).rsi().iloc[-1]
+        macd_val = MACD(hist['Close']).macd_diff().iloc[-1]
+        sma_50 = hist['Close'].rolling(50).mean().iloc[-1]
+        sma_200 = hist['Close'].rolling(200).mean().iloc[-1]
+        price = hist['Close'].iloc[-1]
+
+        st.subheader("AI Trade Suggestion")
+        decision = "Hold"
+        reasons = []
+
+        if rsi_val < 30 and macd_val > 0 and sma_50 > sma_200:
+            decision = "Buy"
+            reasons.append("RSI is oversold")
+            reasons.append("MACD is bullish")
+            reasons.append("Trend is up (50 SMA > 200 SMA)")
+        elif rsi_val > 70 or macd_val < 0 or sma_50 < sma_200:
+            decision = "Sell"
+            if rsi_val > 70:
+                reasons.append("RSI is overbought")
+            if macd_val < 0:
+                reasons.append("MACD is bearish")
+            if sma_50 < sma_200:
+                reasons.append("Trend is down (50 SMA < 200 SMA)")
+
+        st.metric("Suggested Action", decision)
+        st.write("Reasoning:")
+        for r in reasons:
+            st.write("- " + r)
